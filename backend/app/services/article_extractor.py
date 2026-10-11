@@ -28,6 +28,7 @@ USER_AGENT: Final[str] = DEFAULT_BROWSER_USER_AGENT
 REQUEST_TIMEOUT: Final[float] = 12.0
 MAX_REDIRECTS: Final[int] = 5
 MIN_ARTICLE_TEXT_LENGTH: Final[int] = 200
+MAX_HTML_BYTES: Final[int] = 2_000_000
 
 ARTICLE_IGNORE_SELECTORS: Final[list[str]] = [
     "nav",
@@ -313,6 +314,27 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
                     _validate_url(current_url)
                     continue
                 response.raise_for_status()
+                content_type = response.headers.get("content-type", "").lower()
+                if content_type and not (
+                    "text/html" in content_type
+                    or "application/xhtml+xml" in content_type
+                ):
+                    raise ArticleContentError(
+                        "The external response is not an HTML document."
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length:
+                    try:
+                        if int(content_length) > MAX_HTML_BYTES:
+                            raise ArticleContentError(
+                                "The external response is too large."
+                            )
+                    except ValueError:
+                        pass
+                if len(response.content) > MAX_HTML_BYTES:
+                    raise ArticleContentError(
+                        "The external response is too large."
+                    )
                 return response.text
     except InvalidArticleURL:
         raise

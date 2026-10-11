@@ -142,6 +142,16 @@ if (document.getElementById("newsInput")) {
     updateAnalyzeState();
     field().focus();
   });
+  let currentAnalysisController = null;
+  const cancelBtn = document.getElementById("cancelAnalyzeButton");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", () => {
+      if (currentAnalysisController) {
+        currentAnalysisController.abort();
+      }
+    });
+  }
+
   document
     .getElementById("analyzeButton")
     .addEventListener("click", async () => {
@@ -177,27 +187,44 @@ if (document.getElementById("newsInput")) {
         .forEach((step, i) =>
           setTimeout(() => step.classList.add("complete"), i * 520),
         );
+
+      currentAnalysisController = new AbortController();
+
       try {
-        const result = await analyzeNews(value, inputType);
+        const result = await analyzeNews(value, inputType, currentAnalysisController.signal);
         sessionStorage.setItem(
           "tndAnalysisResult",
           JSON.stringify({ ...result, input: value }),
         );
-        setTimeout(() => (location.href = "results.html"), 2200);
+        setTimeout(() => (location.href = "results.html"), 1500);
       } catch (error) {
         overlay.classList.remove("visible");
         overlay.setAttribute("aria-hidden", "true");
         analyzeButton.disabled = false;
-        if (error instanceof TypeError || error.name === "AbortError" || error.name === "TimeoutError") {
+        updateAnalyzeState();
+
+        if (error.isUserCancelled || (error.name === "AbortError" && error.message.includes("cancelled"))) {
+          message.textContent = "Analysis was cancelled.";
+        } else if (error.isTimeout || error.name === "TimeoutError") {
           message.textContent =
-            "Unable to connect to the TND analysis server. Please make sure the backend is running and try again.";
-        } else if (error.message && error.message.startsWith("Analysis request failed")) {
+            "The analysis request timed out. Please try again or test a shorter excerpt.";
+        } else if (error.status === 400) {
+          message.textContent = error.message || "Invalid article URL or request format.";
+        } else if (error.status === 422) {
+          message.textContent = error.message || "The webpage did not contain enough extractable article content.";
+        } else if (error.status === 502) {
+          message.textContent = error.message || "Unable to fetch the external webpage.";
+        } else if (error.status === 503) {
+          message.textContent = error.message || "The local AI service (Ollama) is unavailable.";
+        } else if (error instanceof TypeError || (error.name === "AbortError" && !error.isUserCancelled)) {
           message.textContent =
-            "The TND analysis server could not process that request. Please check the input and try again.";
+            "Unable to connect to the TND analysis server. Please make sure the backend is running at http://127.0.0.1:8000 and try again.";
         } else {
           message.textContent =
-            "The analysis server returned an unexpected response. Please try again.";
+            error.message || "The analysis server returned an unexpected response. Please try again.";
         }
+      } finally {
+        currentAnalysisController = null;
       }
     });
 }
@@ -210,9 +237,28 @@ function createClaim(claim, index) {
   number.textContent = `Claim ${String(index + 1).padStart(2, "0")}`;
   const quote = document.createElement("blockquote");
   quote.textContent = `“${claim.text}”`;
+
   const status = document.createElement("span");
-  status.className = `status ${claim.status === "Supported" ? "supported" : "needs"}`;
-  status.textContent = claim.status;
+  const verStatus = (claim.verificationStatus || claim.verification_status || "").toUpperCase();
+  let statusText = claim.status || "Needs Verification";
+  let statusClass = "needs";
+
+  if (verStatus === "SUPPORTED" || claim.status === "Supported") {
+    statusText = "Supported";
+    statusClass = "supported";
+  } else if (verStatus === "CONTRADICTED") {
+    statusText = "Contradicted";
+    statusClass = "warning";
+  } else if (verStatus === "MIXED_EVIDENCE") {
+    statusText = "Mixed Evidence";
+    statusClass = "needs";
+  } else {
+    statusText = "Needs Verification";
+    statusClass = "needs";
+  }
+
+  status.className = `status ${statusClass}`;
+  status.textContent = statusText;
   content.append(number, quote, status);
 
   const button = document.createElement("button");
@@ -223,16 +269,62 @@ function createClaim(claim, index) {
   const symbol = document.createElement("span");
   symbol.textContent = "+";
   button.append(symbol);
+
   const evidence = document.createElement("div");
   evidence.className = "evidence";
   evidence.hidden = true;
-  const evidenceText = document.createElement("p");
-  evidenceText.textContent = Array.isArray(claim.evidence)
-    ? claim.evidence
-        .map((item) => `${item.source}: ${item.description}`)
-        .join(" ")
-    : claim.evidence || "Not available";
-  evidence.append(evidenceText);
+
+  if (Array.isArray(claim.evidence) && claim.evidence.length > 0) {
+    claim.evidence.forEach((item) => {
+      const itemEl = document.createElement("div");
+      itemEl.className = "evidence-item";
+      itemEl.style.marginBottom = "0.75rem";
+
+      const heading = document.createElement("p");
+      heading.style.fontWeight = "600";
+      heading.style.marginBottom = "0.25rem";
+      heading.textContent = `${item.source || "News Source"}: ${item.description || "Article lead"}`;
+      itemEl.append(heading);
+
+      if (item.relevance) {
+        const relTag = document.createElement("span");
+        relTag.className = `status ${item.relevance === "SUPPORTS" ? "supported" : item.relevance === "CONTRADICTS" ? "warning" : "needs"}`;
+        relTag.style.marginRight = "0.5rem";
+        relTag.style.fontSize = "0.75rem";
+        relTag.textContent = item.relevance.replace(/_/g, " ");
+        itemEl.append(relTag);
+      }
+
+      if (item.url) {
+        const link = document.createElement("a");
+        link.href = item.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "View source ↗";
+        link.style.fontSize = "0.85rem";
+        link.style.color = "var(--color-primary, #2563eb)";
+        itemEl.append(link);
+      }
+
+      if (item.explanation) {
+        const expl = document.createElement("p");
+        expl.style.fontSize = "0.875rem";
+        expl.style.marginTop = "0.25rem";
+        expl.style.opacity = "0.85";
+        expl.textContent = item.explanation;
+        itemEl.append(expl);
+      }
+
+      evidence.append(itemEl);
+    });
+  } else {
+    const emptyP = document.createElement("p");
+    emptyP.style.fontStyle = "italic";
+    emptyP.style.opacity = "0.75";
+    emptyP.textContent = "No external evidence leads retrieved for this claim.";
+    evidence.append(emptyP);
+  }
+
   button.addEventListener("click", () => {
     const open = button.getAttribute("aria-expanded") === "true";
     button.setAttribute("aria-expanded", String(!open));
@@ -240,6 +332,7 @@ function createClaim(claim, index) {
     symbol.textContent = open ? "+" : "–";
     evidence.hidden = open;
   });
+
   article.append(content, button, evidence);
   return article;
 }
@@ -265,10 +358,20 @@ function renderResults(result) {
     signalList.append(item);
   });
   const claimsList = document.getElementById("claimsList");
-  (Array.isArray(result.claims) ? result.claims : []).forEach((claim, index) =>
-    claimsList.append(createClaim(claim, index)),
-  );
+  if (Array.isArray(result.claims) && result.claims.length > 0) {
+    result.claims.forEach((claim, index) =>
+      claimsList.append(createClaim(claim, index)),
+    );
+  } else {
+    const noClaimsP = document.createElement("p");
+    noClaimsP.style.fontStyle = "italic";
+    noClaimsP.style.opacity = "0.75";
+    noClaimsP.style.padding = "1rem 0";
+    noClaimsP.textContent = "No verifiable factual claims were extracted from this content.";
+    claimsList.append(noClaimsP);
+  }
 }
+
 
 if (document.getElementById("riskScore")) {
   const saved = sessionStorage.getItem("tndAnalysisResult");

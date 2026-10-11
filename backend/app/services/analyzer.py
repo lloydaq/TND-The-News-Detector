@@ -6,11 +6,102 @@ import httpx
 
 from app.models.schemas import AnalysisResponse, AnalyzeRequest
 from app.services.article_extractor import ExtractedArticle
+from app.services.evidence_retriever import search_evidence
+from app.services.evidence_content import retrieve_evidence_content
+from app.services.evidence_verifier import verify_evidence
+from app.services.ollama_config import OLLAMA_MODEL, OLLAMA_URL
 
 logger = logging.getLogger(__name__)
+from typing import Any
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-OLLAMA_MODEL = "llama3.2:3b"
+
+def calculate_risk_score(
+    signals: list[dict[str, Any]],
+    source_reliability: str,
+    claims: list[dict[str, Any]],
+) -> tuple[int, str]:
+    """Calculate an explainable misinformation risk score and label.
+
+    Combines:
+    - Content signals (warning vs positive)
+    - Source reliability (Unknown, Low, Moderate, High)
+    - Claim verification statuses (SUPPORTED, CONTRADICTED, MIXED_EVIDENCE, UNVERIFIED)
+
+    Constraints:
+    - Unsupported claims are not automatically labelled false.
+    - Lack of evidence is not automatically interpreted as misinformation.
+    - A low risk score is not presented as proof of truth.
+    - Unverified claims cannot receive unjustified certainty (score clamped >= 40).
+    - Contradictory evidence transparently drives higher risk (score clamped >= 70).
+    - Score ranges: < 30: "Low Risk", 30..69: "Needs Verification", >= 70: "High Risk".
+    """
+    warning_count = sum(
+        1 for signal in signals
+        if signal.get("status") == "warning"
+    )
+    positive_count = sum(
+        1 for signal in signals
+        if signal.get("status") == "positive"
+    )
+
+    # Base heuristic from signals
+    score = 50 + (warning_count * 15) - (positive_count * 10)
+
+    # Factor in source reliability
+    if source_reliability == "Low":
+        score += 15
+    elif source_reliability == "High":
+        score -= 10
+    elif source_reliability == "Moderate":
+        score -= 5
+
+    # Factor in claim verification results
+    contradicted_count = sum(
+        1 for claim in claims
+        if claim.get("verificationStatus") == "CONTRADICTED"
+    )
+    mixed_count = sum(
+        1 for claim in claims
+        if claim.get("verificationStatus") == "MIXED_EVIDENCE"
+    )
+    supported_count = sum(
+        1 for claim in claims
+        if claim.get("verificationStatus") == "SUPPORTED"
+    )
+    unverified_count = sum(
+        1 for claim in claims
+        if claim.get("verificationStatus") == "UNVERIFIED"
+    )
+
+    score += (contradicted_count * 25)
+    score += (mixed_count * 10)
+    score -= (supported_count * 10)
+
+    # Guardrails:
+    # 1. Any confirmed contradiction indicates high misinformation risk
+    if contradicted_count > 0:
+        score = max(score, 70)
+
+    # 2. When claims exist and lack corroboration (all unverified or unknown source),
+    # do not grant unjustified certainty ("Low Risk" < 30).
+    # Maintain in the "Needs Verification" range.
+    if claims and supported_count == 0 and (unverified_count > 0 or source_reliability == "Unknown"):
+        score = max(score, 40)
+
+    # 3. If there are no claims and source is unknown, maintain at least neutral
+    if not claims and source_reliability == "Unknown":
+        score = max(score, 35)
+
+    score = max(0, min(100, score))
+
+    if score < 30:
+        label = "Low Risk"
+    elif score < 70:
+        label = "Needs Verification"
+    else:
+        label = "High Risk"
+
+    return score, label
 
 
 def analyze_content(
@@ -64,8 +155,17 @@ Rules:
 - "positive" means the signal does not show an obvious warning sign.
 - "unknown" means there is insufficient information.
 - sourceReliability must be "Unknown", "Low", "Moderate", or "High".
-- Extract up to 5 specific factual claims.
-- If there are no factual claims, return an empty claims list.
+- Extract only complete, specific, independently verifiable factual claims.
+- Extract no more than 5 claims.
+- Each claim must express a complete assertion that could be checked
+  against reliable external sources.
+- Do not extract isolated words, dates, organizations, phrases,
+  or fragments of another claim.
+- Do not create multiple claims from different fragments of the same
+  sentence unless they express distinct factual assertions.
+- Preserve the meaning and context of each claim.
+- If the content contains no factual assertions, return an empty
+  claims list.
 - Do not invent evidence, sources, or verification.
 - Keep all claims marked "Needs Verification".
 - Do not claim to have searched the internet or independently verified facts.
@@ -125,34 +225,13 @@ Article content:
                 }
             )
 
-        # Calculate a preliminary heuristic score from cleaned signals.
-        # This is not a probability that the content is false.
-        warning_count = sum(
-            1 for signal in clean_signals
-            if signal["status"] == "warning"
-        )
-        positive_count = sum(
-            1 for signal in clean_signals
-            if signal["status"] == "positive"
-        )
-
-        score = max(
-            0,
-            min(100, 50 + warning_count * 15 - positive_count * 10),
-        )
-
-        if score < 30:
-            label = "Low Risk"
-        elif score < 70:
-            label = "Needs Verification"
-        else:
-            label = "High Risk"
-
         raw_claims = result.get("claims", [])
         if not isinstance(raw_claims, list):
             raw_claims = []
 
         clean_claims = []
+        content_cache: dict[str, dict[str, object]] = {}
+        search_cache: dict[str, list[dict[str, str]]] = {}
 
         for index, claim in enumerate(raw_claims[:5], start=1):
             if not isinstance(claim, dict):
@@ -162,14 +241,41 @@ Article content:
             if not isinstance(claim_text, str) or not claim_text.strip():
                 continue
 
+            if claim_text in search_cache:
+                evidence = search_cache[claim_text]
+            else:
+                evidence = search_evidence(claim_text, limit=3)
+                search_cache[claim_text] = evidence
+
+            evidence_with_content = retrieve_evidence_content(
+                evidence,
+                cache=content_cache,
+                max_articles=3,
+            )
+            verification = verify_evidence(
+                claim_text,
+                evidence_with_content,
+                max_articles=3,
+            )
+
             clean_claims.append(
                 {
                     "id": index,
                     "text": claim_text[:1000],
                     "status": "Needs Verification",
-                    "evidence": [],
+                    "evidence": [
+                        item.model_dump(exclude_none=True, by_alias=True)
+                        for item in verification.evidence
+                    ] or evidence_with_content,
+                    "verificationStatus": verification.verification_status,
                 }
             )
+
+        score, label = calculate_risk_score(
+            signals=clean_signals,
+            source_reliability=reliability,
+            claims=clean_claims,
+        )
 
         return AnalysisResponse(
             title=title,
@@ -183,6 +289,7 @@ Article content:
             signals=clean_signals,
             claims=clean_claims,
         )
+
 
     except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
         logger.exception("Local AI analysis failed: %s", exc)

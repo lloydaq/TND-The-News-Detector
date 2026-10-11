@@ -29,9 +29,22 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
             ) from error
         except ArticleContentError as error:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(error),
             ) from error
-        return analyze_content(request, article)
+        try:
+            return analyze_content(request, article)
+        except RuntimeError as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(error),
+            ) from error
 
-    return analyze_content(request)
+    try:
+        return analyze_content(request)
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(error),
+        ) from error
+

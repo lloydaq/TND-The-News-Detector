@@ -7,14 +7,15 @@ class AnalyzeRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     type: Literal["url", "text"]
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, max_length=100_000)
 
     @field_validator("content")
     @classmethod
     def content_must_not_be_empty(cls, value: str) -> str:
-        if not value:
+        if not value or not value.strip():
             raise ValueError("content cannot be empty")
         return value
+
 
 
 class Signal(BaseModel):
@@ -22,16 +23,36 @@ class Signal(BaseModel):
     status: str
 
 
-class Evidence(BaseModel):
+
+class Evidence(BaseModel): 
     source: str
     description: str
-
+    url: str | None = None
+    content_status: Literal[
+        "FETCHED",
+        "UNAVAILABLE",
+        "BLOCKED",
+        "UNSUPPORTED_CONTENT",
+    ] | None = Field(default=None, alias="contentStatus")
+    relevance: Literal[
+        "SUPPORTS",
+        "CONTRADICTS",
+        "RELATED_ONLY",
+        "INSUFFICIENT_INFORMATION",
+    ] | None = None
+    explanation: str | None = None
 
 class Claim(BaseModel):
     id: int
     text: str
     status: str
     evidence: list[Evidence]
+    verification_status: Literal[
+        "SUPPORTED",
+        "CONTRADICTED",
+        "MIXED_EVIDENCE",
+        "UNVERIFIED",
+    ] = Field(default="UNVERIFIED", alias="verificationStatus")
 
 
 class AnalysisResponse(BaseModel):
