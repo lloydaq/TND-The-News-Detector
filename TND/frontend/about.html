@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About TND</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="TND home"><img class="theme-logo" src="logo(lightmode).png" data-logo-light="logo(lightmode).png" data-logo-dark="logo(darkmode).png" alt="TND — Trustworthy News Detector" /></a>
+      <nav aria-label="Primary navigation">
+        <a href="index.html">Home</a
+        ><a href="index.html#how-it-works">How It Works</a
+        ><a class="active" href="about.html">About</a>
+      </nav>
+      <div class="theme-switcher" role="group" aria-label="Color theme">
+        <button type="button" data-theme-choice="light" aria-label="Use light theme" aria-pressed="false"><span aria-hidden="true">☀</span><span class="theme-label">Light</span></button>
+        <button type="button" data-theme-choice="system" aria-label="Use system theme" aria-pressed="false"><span aria-hidden="true">◐</span><span class="theme-label">System</span></button>
+        <button type="button" data-theme-choice="dark" aria-label="Use dark theme" aria-pressed="false"><span aria-hidden="true">☾</span><span class="theme-label">Dark</span></button>
+      </div>
+    </header>
+    <main class="about-page">
+      <section class="about-hero" aria-labelledby="about-title">
+        <p class="overline">About TND</p>
+        <h1 id="about-title">Better context for the news you read.</h1>
+        <p class="about-intro">
+          TND is an AI-assisted news analysis tool built to help you look
+          beyond the headline.
+        </p>
+        <p class="about-intro">
+          It examines an article for signals such as potentially unsupported
+          claims, sensational language, source information, and other
+          indicators that may warrant further verification.
+        </p>
+        <p class="about-intro">
+          TND doesn't tell you what to believe. Instead, it gives you context
+          and signals to help you make a more informed judgment.
+        </p>
+        <blockquote class="about-callout">
+          “Think of TND as a second look — not the final word.”
+        </blockquote>
+      </section>
+
+      <section class="about-section" aria-labelledby="does-title">
+        <div class="about-section-heading">
+          <p class="overline">How it helps</p>
+          <h2 id="does-title">What TND Does</h2>
+        </div>
+        <div class="about-features">
+          <article class="about-feature">
+            <span class="about-feature-number">01</span>
+            <h3>Analyze</h3>
+            <p>Examine the content and identify signals that may deserve attention.</p>
+          </article>
+          <article class="about-feature">
+            <span class="about-feature-number">02</span>
+            <h3>Highlight Claims</h3>
+            <p>Surface important claims within an article for closer review.</p>
+          </article>
+          <article class="about-feature">
+            <span class="about-feature-number">03</span>
+            <h3>Assess Risk</h3>
+            <p>Provide an AI-assisted assessment based on the signals identified.</p>
+          </article>
+          <article class="about-feature">
+            <span class="about-feature-number">04</span>
+            <h3>Encourage Critical Reading</h3>
+            <p>Help you pause, question, and verify before accepting or sharing information.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="about-section about-limitations" aria-labelledby="doesnt-title">
+        <div class="about-section-heading">
+          <p class="overline">A useful boundary</p>
+          <h2 id="doesnt-title">What TND Doesn't Do</h2>
+        </div>
+        <div class="about-limitations-copy">
+          <p>
+            TND does not guarantee that an article is true or false.
+            AI-assisted analysis can make mistakes, miss context, or interpret
+            information incorrectly.
+          </p>
+          <p>
+            For important decisions, always consult the original source and
+            reliable independent sources.
+          </p>
+          <p>
+            Use TND as a starting point for verification — not as a replacement
+            for it.
+          </p>
+        </div>
+      </section>
+
+      <div class="about-cta">
+        <a class="primary-button" href="index.html"
+          >Analyze a news article <span>→</span></a
+        >
+      </div>
+    </main>
+    <footer>
+      <span>© 2026 TND</span><span>AI-assisted news analysis</span>
+    </footer>
+    <script src="js/main.js"></script>
+  </body>
+</html>

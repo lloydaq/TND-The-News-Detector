@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TND — Trustworthy News Detector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="TND home"><img class="theme-logo" src="logo(lightmode).png" data-logo-light="logo(lightmode).png" data-logo-dark="logo(darkmode).png" alt="TND — Trustworthy News Detector" /></a>
+      <nav aria-label="Primary navigation">
+        <a class="active" href="index.html">Home</a
+        ><a href="#how-it-works">How It Works</a><a href="about.html">About</a>
+      </nav>
+      <div class="theme-switcher" role="group" aria-label="Color theme">
+        <button type="button" data-theme-choice="light" aria-label="Use light theme" aria-pressed="false"><span aria-hidden="true">☀</span><span class="theme-label">Light</span></button>
+        <button type="button" data-theme-choice="system" aria-label="Use system theme" aria-pressed="false"><span aria-hidden="true">◐</span><span class="theme-label">System</span></button>
+        <button type="button" data-theme-choice="dark" aria-label="Use dark theme" aria-pressed="false"><span aria-hidden="true">☾</span><span class="theme-label">Dark</span></button>
+      </div>
+    </header>
+    <main>
+      <section class="analyzer-intro" aria-labelledby="page-title">
+        <p class="overline">TND</p>
+        <h1 id="page-title">Trustworthy News Detector</h1>
+        <p class="tagline">Know Before You Believe.</p>
+        <p class="intro-copy">
+          Analyze news and identify information that may require further
+          verification.
+        </p>
+      </section>
+      <section class="analyzer" aria-label="News analyzer">
+        <div class="input-tabs" role="tablist" aria-label="Input type">
+          <button
+            class="input-tab active"
+            type="button"
+            data-type="url"
+            role="tab"
+            aria-selected="true"
+          >
+            URL</button
+          ><button
+            class="input-tab"
+            type="button"
+            data-type="text"
+            role="tab"
+            aria-selected="false"
+          >
+            TEXT
+          </button>
+        </div>
+        <div class="input-frame">
+          <label id="inputLabel" for="newsInput">News article URL</label
+          ><button id="pasteButton" class="input-paste" type="button">Paste</button
+          ><button id="clearButton" class="input-clear" type="button" hidden>Clear</button
+          ><input
+            id="newsInput"
+            type="url"
+            inputmode="url"
+            placeholder="Paste news article URL here..."
+            autocomplete="url"
+          />
+          <p id="inputHint" class="input-hint">
+            Enter a public link to a news article.
+          </p>
+        </div>
+        <p id="validationMessage" class="validation-message" role="alert"></p>
+        <label class="terms-check"><input id="terms" type="checkbox" /><span>I have read and agree to the <button id="termsButton" type="button">Terms &amp; Conditions</button>.</span></label>
+        <div class="actions">
+          <button id="analyzeButton" class="primary-button" type="button" disabled>
+            Analyze News <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </section>
+      <section
+        class="how-it-works"
+        id="how-it-works"
+        aria-labelledby="how-title"
+      >
+        <div class="section-title">
+          <p class="overline">Simple process</p>
+          <h2 id="how-title">How TND Works</h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <span>01</span>
+            <div>
+              <h3>Submit</h3>
+              <p>Paste a news URL or article text.</p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <h3>Analyze</h3>
+              <p>TND analyzes the submitted content.</p>
+            </div>
+          </li>
+          <li>
+            <span>03</span>
+            <div>
+              <h3>Evaluate</h3>
+              <p>The system evaluates misinformation-related signals.</p>
+            </div>
+          </li>
+          <li>
+            <span>04</span>
+            <div>
+              <h3>Review</h3>
+              <p>Receive an explainable assessment.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+    </main>
+    <footer>
+      <span>© 2026 TND</span><span>AI-assisted news analysis</span>
+    </footer>
+    <div
+      id="loadingOverlay"
+      class="loading-overlay"
+      aria-live="polite"
+      aria-hidden="true"
+    >
+      <div class="loading-card">
+        <div class="loader"></div>
+        <p class="overline">TND is working</p>
+        <h2>Analyzing your news...</h2>
+        <ul>
+          <li class="loading-step">Extracting content</li>
+          <li class="loading-step">Analyzing language</li>
+          <li class="loading-step">Evaluating credibility signals</li>
+          <li class="loading-step">Checking claims</li>
+        </ul>
+      </div>
+    </div>
+    <dialog id="termsDialog" class="terms-modal" aria-labelledby="termsTitle" aria-describedby="termsDate">
+      <div class="terms-modal-header"><div><p class="overline">Legal</p><h2 id="termsTitle">TERMS &amp; CONDITIONS</h2><p id="termsDate" class="terms-modal-date">Last Updated: October 4, 2026</p></div><button id="termsClose" class="terms-modal-close" type="button" aria-label="Close Terms &amp; Conditions">×</button></div>
+      <div class="terms-modal-content">
+        <p>Welcome to Trustworthy News Detector (TND). By using this website, you agree to these Terms &amp; Conditions. Please read them carefully before using the service.</p>
+        <section><h3>1. ABOUT TND</h3><p>Trustworthy News Detector is an AI-assisted news analysis platform designed to help users identify potentially misleading information, unsupported claims, sensational language, missing context, and other signals that may require further verification.</p><p>TND is intended as an informational and educational tool and should not be considered a definitive fact-checking authority.</p></section>
+        <section><h3>2. AI-ASSISTED ANALYSIS</h3><p>TND may use automated or AI-based methods to analyze submitted news content.</p><p>Analysis results may contain errors, inaccuracies, incomplete information, or incorrect conclusions. A result indicating that content is "Supported," "Needs Verification," "Likely Misleading," or any similar classification does not establish whether the information is objectively true or false.</p><p>Users should independently verify important information using reliable and authoritative sources.</p></section>
+        <section><h3>3. USER RESPONSIBILITY</h3><p>You are responsible for the content you submit to TND and for how you use the results.</p><p>You agree not to use TND:</p><ul><li>For unlawful or fraudulent activities.</li><li>To intentionally spread misinformation or harmful content.</li><li>To harass, threaten, or target individuals or organizations.</li><li>To submit content that you do not have the right to use or access.</li><li>In a way that attempts to disrupt, damage, or abuse the service.</li></ul></section>
+        <section><h3>4. ACCURACY AND LIMITATIONS</h3><p>TND does not guarantee that:</p><ul><li>Every article or claim will be analyzed correctly.</li><li>Analysis results will always be accurate or complete.</li><li>Information identified as reliable is necessarily true.</li><li>Information identified as potentially misleading is necessarily false.</li><li>The service will always be available or error-free.</li></ul><p>News content can change over time, and the availability or reliability of information may vary between sources.</p></section>
+        <section><h3>5. THIRD-PARTY SOURCES</h3><p>TND may analyze or reference information originating from third-party websites, publishers, or other sources.</p><p>TND does not necessarily endorse, control, or guarantee the accuracy of third-party content. Users should review the original source and other credible sources before relying on important information.</p></section>
+        <section><h3>6. INTELLECTUAL PROPERTY</h3><p>The TND name, logo, interface, design, software, and original content are owned by or licensed to TND unless otherwise stated.</p><p>You may use the service for its intended personal, educational, or authorized purposes. You may not copy, reproduce, modify, distribute, or commercially exploit TND's proprietary materials without appropriate permission.</p></section>
+        <section><h3>7. PRIVACY</h3><p>Your use of TND may involve the processing of information submitted through the service.</p><p>Any collection, storage, or processing of personal information will be handled according to the applicable Privacy Policy.</p><p>Users should avoid submitting sensitive personal information unless it is specifically required for the service.</p></section>
+        <section><h3>8. AVAILABILITY</h3><p>We may modify, suspend, or discontinue parts of TND at any time, including for maintenance, updates, security improvements, or technical reasons.</p><p>We do not guarantee uninterrupted or error-free availability.</p></section>
+        <section><h3>9. DISCLAIMER</h3><p>TND is provided for informational purposes and, to the extent permitted by applicable law, is provided without guarantees regarding the accuracy, completeness, reliability, or suitability of its analysis.</p><p>TND should not be used as the sole basis for decisions involving legal, medical, financial, academic, professional, public-safety, or other high-impact matters.</p></section>
+        <section><h3>10. LIMITATION OF LIABILITY</h3><p>To the maximum extent permitted by applicable law, TND and its developers shall not be responsible for losses, damages, or consequences resulting from reliance on analysis provided by the service or from the use or inability to use the service.</p></section>
+        <section><h3>11. CHANGES TO THESE TERMS</h3><p>These Terms &amp; Conditions may be updated from time to time. When changes are made, the updated version will be posted on this page with a revised "Last Updated" date.</p><p>Continued use of TND after changes are posted constitutes acceptance of the updated Terms.</p></section>
+        <section><h3>12. CONTACT</h3><p>If you have questions regarding these Terms &amp; Conditions, please contact the TND team through the contact information provided on the website.</p></section>
+      </div>
+      <div class="terms-modal-footer"><p>I have read and agree to the Terms &amp; Conditions.</p><button id="termsCloseButton" class="secondary-button" type="button">Close</button></div>
+    </dialog>
+    <script src="js/analysis.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>

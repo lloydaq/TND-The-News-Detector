@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analysis Result — TND</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="TND home"><img class="theme-logo" src="logo(lightmode).png" data-logo-light="logo(lightmode).png" data-logo-dark="logo(darkmode).png" alt="TND — Trustworthy News Detector" /></a>
+      <nav aria-label="Primary navigation">
+        <a href="index.html">Home</a
+        ><a href="index.html#how-it-works">How It Works</a
+        ><a href="about.html">About</a>
+      </nav>
+      <div class="theme-switcher" role="group" aria-label="Color theme">
+        <button type="button" data-theme-choice="light" aria-label="Use light theme" aria-pressed="false"><span aria-hidden="true">☀</span><span class="theme-label">Light</span></button>
+        <button type="button" data-theme-choice="system" aria-label="Use system theme" aria-pressed="false"><span aria-hidden="true">◐</span><span class="theme-label">System</span></button>
+        <button type="button" data-theme-choice="dark" aria-label="Use dark theme" aria-pressed="false"><span aria-hidden="true">☾</span><span class="theme-label">Dark</span></button>
+      </div>
+    </header>
+    <main class="results-page">
+      <div id="resultsContent">
+      <div class="result-heading">
+        <p class="overline">TND</p>
+        <h1>Analysis Result</h1>
+        <p id="resultInput" class="submitted-input"></p>
+      </div>
+      <section class="risk-summary" aria-labelledby="risk-title">
+        <div>
+          <p class="overline">Misinformation risk</p>
+          <h2 id="risk-title">
+            <span id="riskScore"></span><small>%</small>
+          </h2>
+          <p id="riskLabel" class="risk-label"></p>
+        </div>
+        <div id="riskMeter" class="risk-meter" aria-label="Misinformation risk">
+          <span></span>
+        </div>
+        <p id="assessmentNote" class="assessment-note"></p>
+      </section>
+      <div class="result-grid">
+        <section class="detail-section">
+          <h2>Source</h2>
+          <dl>
+            <div><dt>Source</dt><dd id="sourceValue"></dd></div>
+            <div><dt>Publisher</dt><dd id="publisherValue"></dd></div>
+            <div><dt>Source reliability</dt><dd><span id="reliabilityValue" class="status moderate"></span></dd></div>
+          </dl>
+        </section>
+        <section class="detail-section">
+          <h2>Content Signals</h2>
+          <ul id="signalList" class="signal-list"></ul>
+        </section>
+      </div>
+      <section class="claims-section">
+        <div class="claims-head">
+          <div>
+            <p class="overline">Content review</p>
+            <h2>Claims</h2>
+          </div>
+          <p>Claims highlighted for further reading.</p>
+        </div>
+        <div id="claimsList"></div>
+      </section>
+      <div class="another-action">
+        <a id="analyzeAnother" class="primary-button" href="index.html"
+          >Analyze Another Article <span aria-hidden="true">→</span></a
+        >
+      </div>
+      </div>
+      <section id="resultFallback" class="result-heading" hidden>
+        <p class="overline">TND</p>
+        <h1>No analysis result available.</h1>
+        <a class="primary-button" href="index.html"
+          >Analyze an Article <span aria-hidden="true">→</span></a
+        >
+      </section>
+    </main>
+    <footer>
+      <span>© 2026 TND</span><span>AI-assisted news analysis</span>
+    </footer>
+    <script src="js/analysis.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
