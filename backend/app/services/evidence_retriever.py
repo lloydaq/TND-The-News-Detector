@@ -2,7 +2,9 @@ import logging
 import os
 import re
 import inspect
+from datetime import datetime
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 from dotenv import load_dotenv
@@ -19,7 +21,7 @@ MAX_LIMIT = 5
 REQUEST_TIMEOUT = 15.0
 GDELT_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
 
-EvidenceItem = dict[str, str]
+EvidenceItem = dict[str, Any]
 
 
 def _search_provider(
@@ -92,13 +94,25 @@ def _canonical_url(url: str) -> str:
     if not clean:
         return ""
     try:
-        from urllib.parse import urlparse
         parsed = urlparse(clean)
         scheme = parsed.scheme.lower()
-        netloc = parsed.netloc.lower()
-        path = parsed.path.rstrip("/")
-        return f"{scheme}://{netloc}{path}"
-    except Exception:
+        hostname = (parsed.hostname or "").lower()
+        if not hostname or parsed.username or parsed.password:
+            return ""
+        port = parsed.port
+        netloc = hostname
+        if port and not ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
+            netloc = f"{hostname}:{port}"
+        query = urlencode(
+            sorted(
+                (key, value)
+                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                if not key.lower().startswith("utm_")
+                and key.lower() not in {"fbclid", "gclid"}
+            )
+        )
+        return urlunparse((scheme, netloc, parsed.path.rstrip("/"), "", query, ""))
+    except ValueError:
         return clean
 
 
@@ -113,32 +127,70 @@ def _sanitize_gnews_query(query: str) -> str:
     return " ".join(clean.split())[:200]
 
 
+def generate_search_queries(claim: Any, max_queries: int = 2) -> list[str]:
+    """Create a small deterministic query set without changing the claim."""
+    clean = _clean_text(claim)
+    if not clean:
+        return []
+    exact = _sanitize_gnews_query(clean)
+    if not exact:
+        return []
+    queries = [exact]
+    fallback = _broaden_query(clean)
+    if fallback and fallback != exact and len(queries) < max(1, min(max_queries, 2)):
+        queries.append(fallback)
+    return queries
+
+
 def _broaden_query(query: str) -> str:
-    """Remove reporting language while retaining entities and key details."""
+    """Create one bounded fallback while preserving claim-changing terms."""
     clean = re.sub(r"['’]s\b", "", query)
     tokens = re.findall(r"[A-Za-z0-9]+", clean)
-    meaningful_tokens = [
-        token
-        for token in tokens
-        if (
-            token.lower() not in _QUERY_FILLER_WORDS
-            or token[0].isupper()
-            or any(character.isdigit() for character in token)
-        )
+    protected = {
+        "not", "no", "never", "may", "might", "could", "if", "unless",
+        "because", "rejected", "approved", "denied", "according",
+    }
+    meaningful = [
+        token for token in tokens
+        if token.lower() not in _QUERY_FILLER_WORDS
+        or token.lower() in protected
+        or token[:1].isupper()
+        or any(character.isdigit() for character in token)
     ]
-
-    # For long claims, focus on named entities, numbers, and core nouns (up to 4 tokens)
-    # to avoid empty results in strict AND-based news search APIs.
-    if len(meaningful_tokens) > 4:
+    if len(meaningful) > 4:
         entities = [
-            t for t in meaningful_tokens
-            if t[0].isupper() or any(c.isdigit() for c in t)
+            token for token in meaningful
+            if token[:1].isupper()
+            or any(character.isdigit() for character in token)
+            or token.lower() in protected
         ]
-        others = [t for t in meaningful_tokens if t not in entities]
-        selected = set(entities + others[:max(0, 4 - len(entities))])
-        meaningful_tokens = [t for t in meaningful_tokens if t in selected]
+        remaining = [token for token in meaningful if token not in entities]
+        meaningful = entities + remaining[:max(0, 4 - len(entities))]
+    return " ".join(meaningful)[:200]
 
-    return " ".join(meaningful_tokens)[:200]
+
+def _normalise_date(value: Any) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    try:
+        if re.fullmatch(r"\d{8}T\d{6}Z", text):
+            return datetime.strptime(text, "%Y%m%dT%H%M%SZ").isoformat() + "Z"
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return ""
+
+
+def _quality_indicators(url: str, source: str) -> dict[str, Any]:
+    parsed = urlparse(url)
+    return {
+        "secureTransport": parsed.scheme.lower() == "https",
+        "metadataComplete": bool(
+            source and source != "News publisher" and parsed.hostname
+        ),
+        "contentAvailable": False,
+        "reputation": "UNKNOWN",
+    }
 
 
 
@@ -156,8 +208,10 @@ def _normalise_article(
     if not title or not url:
         return None
 
-    # Only accept HTTP(S) article URLs.
-    if not url.startswith(("https://", "http://")):
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"https", "http"} or not parsed.hostname:
+        return None
+    if parsed.username or parsed.password:
         return None
 
     return {
@@ -180,7 +234,6 @@ def search_gnews(
     """
 
     query = _clean_text(query)
-
     if not query:
         return []
 
@@ -216,16 +269,27 @@ def search_gnews(
         try:
             data = response.json()
         except ValueError:
+            if diagnostics is not None:
+                diagnostics["gnews"] = "invalid_response"
             logger.warning("GNews returned invalid JSON.")
             return []
 
         if not isinstance(data, dict):
+            if diagnostics is not None:
+                diagnostics["gnews"] = "invalid_response"
             logger.warning("GNews returned an unexpected response.")
             return []
 
-        articles = data.get("articles", [])
+        if "articles" not in data:
+            if diagnostics is not None:
+                diagnostics["gnews"] = "invalid_response"
+            logger.warning("GNews response omitted the articles field.")
+            return []
+        articles = data["articles"]
 
         if not isinstance(articles, list):
+            if diagnostics is not None:
+                diagnostics["gnews"] = "invalid_response"
             logger.warning("GNews articles field is not a list.")
             return []
 
@@ -251,6 +315,9 @@ def search_gnews(
                 canon = _canonical_url(item["url"])
                 if canon and canon not in seen_urls:
                     seen_urls.add(canon)
+                    published_at = _normalise_date(article.get("publishedAt"))
+                    if published_at:
+                        item["publishedAt"] = published_at
                     evidence.append(item)
 
             if len(evidence) >= _normalise_limit(limit):
@@ -260,6 +327,8 @@ def search_gnews(
             "GNews returned %d usable article(s).",
             len(evidence),
         )
+        if diagnostics is not None:
+            diagnostics["gnews"] = "results" if evidence else "no_results"
 
         return evidence
 
@@ -269,12 +338,25 @@ def search_gnews(
             "GNews returned HTTP %s.",
             exc.response.status_code,
         )
+        if diagnostics is not None:
+            diagnostics["gnews"] = (
+                "rate_limited" if exc.response.status_code == 429
+                else "auth_error" if exc.response.status_code in {401, 403}
+                else "quota_exhausted"
+                if exc.response.status_code == 402
+                else "error"
+            )
 
     except httpx.RequestError as exc:
         logger.warning(
             "GNews network request failed: %s",
             type(exc).__name__,
         )
+        if diagnostics is not None:
+            diagnostics["gnews"] = (
+                "timeout" if isinstance(exc, httpx.TimeoutException)
+                else "network_error"
+            )
 
     return []
 
@@ -282,13 +364,15 @@ def search_gnews(
 def search_gdelt(
     query: str,
     limit: int = DEFAULT_LIMIT,
+    diagnostics: dict[str, str] | None = None,
 ) -> list[EvidenceItem]:
     """Search GDELT for related news articles."""
 
-    query = _clean_text(query)
-
-    if not query:
+    original_claim = _clean_text(query)
+    queries = generate_search_queries(original_claim, max_queries=2)
+    if not queries:
         return []
+    query = queries[0]
 
     # Clean query text for GDELT doc API
     clean_q = re.sub(r"['’]s\b", "", query)
@@ -324,6 +408,8 @@ def search_gdelt(
         try:
             data = response.json()
         except ValueError:
+            if diagnostics is not None:
+                diagnostics["gdelt"] = "invalid_response"
             logger.warning(
                 "GDELT returned a non-JSON response (HTTP %s).",
                 response.status_code,
@@ -331,12 +417,21 @@ def search_gdelt(
             return []
 
         if not isinstance(data, dict):
+            if diagnostics is not None:
+                diagnostics["gdelt"] = "invalid_response"
             logger.warning("GDELT returned an unexpected response.")
             return []
 
-        articles = data.get("articles", [])
+        if "articles" not in data:
+            if diagnostics is not None:
+                diagnostics["gdelt"] = "invalid_response"
+            logger.warning("GDELT response omitted the articles field.")
+            return []
+        articles = data["articles"]
 
         if not isinstance(articles, list):
+            if diagnostics is not None:
+                diagnostics["gdelt"] = "invalid_response"
             logger.warning("GDELT articles field is not a list.")
             return []
 
@@ -357,6 +452,11 @@ def search_gdelt(
                 canon = _canonical_url(item["url"])
                 if canon and canon not in seen_urls:
                     seen_urls.add(canon)
+                    published_at = _normalise_date(
+                        article.get("seendate") or article.get("date")
+                    )
+                    if published_at:
+                        item["publishedAt"] = published_at
                     evidence.append(item)
 
             if len(evidence) >= _normalise_limit(limit):
@@ -366,6 +466,8 @@ def search_gdelt(
             "GDELT returned %d usable article(s).",
             len(evidence),
         )
+        if diagnostics is not None:
+            diagnostics["gdelt"] = "results" if evidence else "no_results"
 
         return evidence
 
@@ -376,17 +478,26 @@ def search_gdelt(
                 "GDELT returned HTTP 429 (rate limited). Retry-After: %s",
                 retry_after,
             )
+            if diagnostics is not None:
+                diagnostics["gdelt"] = "rate_limited"
         else:
             logger.warning(
                 "GDELT returned HTTP %s.",
                 exc.response.status_code,
             )
+            if diagnostics is not None:
+                diagnostics["gdelt"] = "error"
 
     except httpx.RequestError as exc:
         logger.warning(
             "GDELT network request failed: %s",
             type(exc).__name__,
         )
+        if diagnostics is not None:
+            diagnostics["gdelt"] = (
+                "timeout" if isinstance(exc, httpx.TimeoutException)
+                else "network_error"
+            )
 
     return []
 
@@ -397,96 +508,81 @@ def search_evidence(
     cache: dict[str, list[EvidenceItem]] | None = None,
     diagnostics: dict[str, str] | None = None,
 ) -> list[EvidenceItem]:
-    """Search GNews directly and broadly, then use GDELT as a fallback."""
+    """Search configured providers once with bounded, honest orchestration.
 
-    query = _clean_text(query)
+    An empty result is distinct from a provider failure in ``diagnostics``.
+    Results from both providers are merged deterministically without treating
+    duplicate URLs as independent corroboration.
+    """
 
-    if not query:
+    original_claim = _clean_text(query)
+    queries = generate_search_queries(original_claim, max_queries=2)
+    if not queries:
         return []
+    query = queries[0]
 
     if cache is not None and query in cache:
         return cache[query]
 
     limit = _normalise_limit(limit)
 
-    try:
-        evidence = _search_provider(search_gnews, query, limit, diagnostics)
-    except httpx.HTTPError as exc:
-        logger.warning(
-            "GNews request failed while retrieving evidence: %s",
-            type(exc).__name__,
-        )
-        if diagnostics is not None:
-            diagnostics["gnews"] = "error"
-        evidence = []
+    provider_results: list[EvidenceItem] = []
+    for query_index, query in enumerate(queries):
+        for provider_name, provider in (
+            ("gnews", search_gnews),
+            ("gdelt", search_gdelt),
+        ):
+            try:
+                results = _search_provider(provider, query, limit, diagnostics)
+            except (httpx.HTTPError, OSError, ValueError) as exc:
+                logger.warning(
+                    "%s request failed while retrieving evidence: %s",
+                    provider_name,
+                    type(exc).__name__,
+                )
+                if diagnostics is not None:
+                    diagnostics[provider_name] = "error"
+                continue
+            for item in results:
+                if isinstance(item, dict):
+                    item = dict(item)
+                    item.setdefault("provider", provider_name)
+                    item.setdefault("evidenceType", "HEADLINE_ONLY")
+                    item.setdefault(
+                        "sourceQuality",
+                        _quality_indicators(
+                            _clean_text(item.get("url")),
+                            _clean_text(item.get("source")),
+                        ),
+                    )
+                    item["query"] = query
+                    item["originalClaim"] = original_claim
+                    provider_results.append(item)
+        if provider_results or query_index + 1 >= 2:
+            break
 
-    if evidence:
-        if diagnostics is not None:
-            diagnostics["gnews"] = "results"
-        logger.info("Using GNews evidence.")
-        if cache is not None:
-            cache[query] = evidence
-        return evidence
+    evidence: list[EvidenceItem] = []
+    seen_urls: dict[str, EvidenceItem] = {}
+    for item in provider_results:
+        url_key = _canonical_url(_clean_text(item.get("url")))
+        if url_key and url_key in seen_urls:
+            providers = seen_urls[url_key].setdefault("providers", [])
+            provider = item.get("provider")
+            if provider and provider not in providers:
+                providers.append(provider)
+            seen_urls[url_key]["independence"] = "UNKNOWN"
+            continue
+        if url_key:
+            item["providers"] = [item.get("provider", "unknown")]
+            item["independence"] = "UNKNOWN"
+            seen_urls[url_key] = item
+        evidence.append(item)
+        if len(evidence) >= limit:
+            break
 
-    broadened_query = _broaden_query(query)
-    if broadened_query and broadened_query != query:
-        logger.info(
-            "Original GNews query returned no evidence; retrying with a "
-            "broader query."
-        )
-        try:
-            evidence = _search_provider(
-                search_gnews,
-                broadened_query,
-                limit,
-                diagnostics,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning(
-                "Broader GNews request failed while retrieving evidence: %s",
-                type(exc).__name__,
-            )
-            if diagnostics is not None:
-                diagnostics["gnews"] = "error"
-            evidence = []
-
-        if evidence:
-            if diagnostics is not None:
-                diagnostics["gnews"] = "results"
-            logger.info("Using GNews evidence from the broader query.")
-            if cache is not None:
-                cache[query] = evidence
-            return evidence
-
-    logger.info("GNews returned no usable evidence; trying GDELT.")
-    fallback_query = broadened_query or query
-    try:
-        evidence = _search_provider(search_gdelt, fallback_query, limit, diagnostics)
-    except httpx.HTTPError as exc:
-        logger.warning(
-            "GDELT request failed while retrieving evidence: %s",
-            type(exc).__name__,
-        )
-        if diagnostics is not None:
-            diagnostics["gdelt"] = "error"
-        evidence = []
-
-    if evidence:
-        if diagnostics is not None:
-            diagnostics["gdelt"] = "results"
-        logger.info("Using GDELT fallback evidence.")
-        if cache is not None:
-            cache[query] = evidence
-        return evidence
-
-    logger.warning(
-        "No evidence retrieved for the supplied query."
-    )
-
-    if cache is not None:
-        cache[query] = []
-    if diagnostics is not None:
+    if diagnostics is not None and not provider_results:
+        diagnostics.setdefault("gnews", "no_results")
         diagnostics.setdefault("gdelt", "no_results")
-        if diagnostics.get("gnews") == "configured":
-            diagnostics["gnews"] = "no_results"
-    return []
+    if cache is not None:
+        cache[query] = evidence
+    return evidence

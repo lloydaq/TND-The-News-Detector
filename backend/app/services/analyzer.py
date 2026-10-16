@@ -284,11 +284,23 @@ Publisher: {publisher}
             )
             if verification.degraded:
                 degradation_reasons.add("Evidence verification service unavailable")
-            if not evidence:
-                if search_diagnostics.get("gnews") == "not_configured":
-                    degradation_reasons.add("GNews is not configured")
-                elif search_diagnostics.get("gnews") == "no_results":
-                    degradation_reasons.add("No external evidence results were found")
+            provider_messages = {
+                "not_configured": "Evidence provider is not configured",
+                "rate_limited": "Evidence provider rate limit reached",
+                "auth_error": "Evidence provider authentication failed",
+                "quota_exhausted": "Evidence provider quota was exhausted",
+                "timeout": "Evidence provider timed out",
+                "network_error": "Evidence provider network failure",
+                "invalid_response": "Evidence provider returned malformed data",
+                "error": "Evidence provider request failed",
+                "no_results": "Evidence provider returned no results",
+            }
+            for provider_name, provider_status in search_diagnostics.items():
+                message = provider_messages.get(provider_status)
+                if message:
+                    degradation_reasons.add(
+                        f"{provider_name.upper()}: {message}"
+                    )
 
             clean_claims.append(
                 {

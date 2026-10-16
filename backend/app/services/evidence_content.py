@@ -78,10 +78,17 @@ def retrieve_evidence_content(
             if not content:
                 content_result = {"contentStatus": "UNAVAILABLE"}
             else:
+                source_quality = result.get("sourceQuality")
+                if isinstance(source_quality, dict):
+                    source_quality = dict(source_quality)
+                    source_quality["contentAvailable"] = True
                 content_result = {
                     "contentStatus": "FETCHED",
+                    "evidenceType": "ARTICLE_TEXT",
                     "_content": content,
                 }
+                if source_quality is not None:
+                    content_result["sourceQuality"] = source_quality
 
         cache[url] = content_result
         result.update(content_result)

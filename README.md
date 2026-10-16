@@ -126,6 +126,23 @@ Open `frontend/index.html` in your browser or use a local development server.
 
 The backend's CORS configuration currently supports local development origins.
 
+## Evidence retrieval
+
+For each extracted claim, TND sends a bounded, deterministic search query to
+the configured GNews and GDELT providers. Important claim words, entities,
+numbers, negation, attribution, and causal qualifiers are retained; the
+application does not rewrite the original claim based on search results.
+Provider failures, missing configuration, empty results, rate limits, and
+malformed responses are reported separately in `degradationReasons`.
+
+Results preserve provider provenance, the original claim context, source URL,
+valid publication dates, and headline-versus-article-text status. HTTPS and
+metadata completeness are transparent indicators only, not editorial
+credibility or truth scores. Equivalent URLs are deduplicated conservatively;
+when both providers return one article, their provenance is retained and
+independence remains `UNKNOWN` rather than counting two confirmations.
+Article bodies are fetched only through the protected Phase 2 extractor.
+
 ## Current Limitations
 
 * Extraction cannot execute JavaScript, bypass paywalls, or recover content that
@@ -136,14 +153,19 @@ The backend's CORS configuration currently supports local development origins.
   rejected or reported as partial where appropriate.
 * Ollama and evidence-provider failures produce degraded analysis; they do not
   prove that a claim is true or false.
+* Missing `GNEWS_API_KEY` disables only GNews; GDELT can still run. Provider
+  authentication, quota, timeout, rate-limit, and malformed-response states
+  remain visible as degraded retrieval reasons.
+* Search ranking, HTTPS, publisher names, and result counts do not measure
+  source reputation or truthfulness. Syndicated copies may not be independent.
 * Risk scores are explainable heuristics, not probabilities or verified
   measures of truthfulness.
 
 ## Roadmap
 
-* [ ] Develop an evidence-based claim analysis pipeline.
-* [ ] Integrate reliable external evidence sources.
-* [ ] Distinguish supported, contradicted, and unverified claims.
+* [x] Develop a bounded evidence retrieval pipeline.
+* [x] Integrate GNews and GDELT as provenance-preserving evidence sources.
+* [x] Distinguish supported, contradicted, and unverified claims.
 * [x] Improve error handling and article extraction.
 * [ ] Connect the frontend to live backend analysis.
 * [x] Add automated tests for API endpoints and article extraction.

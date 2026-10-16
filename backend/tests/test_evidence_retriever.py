@@ -43,7 +43,8 @@ def test_exact_gnews_query_returns_results(monkeypatch):
                     }
                 ]
             }
-        )
+        ),
+        _response({"articles": []}),
     ]
     FakeClient.queries = []
     monkeypatch.setattr(evidence_retriever.httpx, "Client", FakeClient)
@@ -54,14 +55,13 @@ def test_exact_gnews_query_returns_results(monkeypatch):
         limit=3,
     )
 
-    assert result == [
-        {
-            "source": "Example News",
-            "description": "ISRO announces satellite mission",
-            "url": "https://example.test/article",
-        }
+    assert result[0]["source"] == "Example News"
+    assert result[0]["provider"] == "gnews"
+    assert result[0]["independence"] == "UNKNOWN"
+    assert FakeClient.queries == [
+        "ISRO announced a new satellite mission",
+        "ISRO announced a new satellite mission",
     ]
-    assert FakeClient.queries == ["ISRO announced a new satellite mission"]
 
 
 def test_broader_gnews_query_is_used_when_exact_query_fails(monkeypatch):
@@ -78,6 +78,7 @@ def test_broader_gnews_query_is_used_when_exact_query_fails(monkeypatch):
                 ]
             }
         ),
+        _response({"articles": []}),
     ]
     FakeClient.queries = []
     monkeypatch.setattr(evidence_retriever.httpx, "Client", FakeClient)
@@ -90,13 +91,12 @@ def test_broader_gnews_query_is_used_when_exact_query_fails(monkeypatch):
     assert len(result) == 1
     assert FakeClient.queries == [
         "ISRO announced a new satellite mission",
-        "ISRO satellite mission",
+        "ISRO announced a new satellite mission",
     ]
 
 
 def test_gdelt_is_used_after_both_gnews_queries_fail(monkeypatch):
     FakeClient.responses = [
-        _response({"articles": []}),
         _response({"articles": []}),
         _response(
             {
@@ -121,8 +121,7 @@ def test_gdelt_is_used_after_both_gnews_queries_fail(monkeypatch):
     assert result[0]["source"] == "example.test"
     assert FakeClient.queries == [
         "ISRO announced a new satellite mission",
-        "ISRO satellite mission",
-        "ISRO satellite mission",
+        "ISRO announced a new satellite mission",
     ]
 
 
@@ -346,3 +345,84 @@ def test_invalid_url_schemes_are_rejected():
     valid = _normalise_article("Title", "https://example.test/valid", "Source")
     assert valid is not None
     assert valid["url"] == "https://example.test/valid"
+
+
+def test_query_generation_preserves_claim_qualifiers():
+    queries = evidence_retriever.generate_search_queries(
+        "The minister did not approve 50 homes in Bristol in 2024 because of flooding."
+    )
+
+    assert queries
+    assert "not" in queries[0].lower()
+    assert "50" in queries[0]
+    assert "Bristol" in queries[0]
+    assert "2024" in queries[0]
+
+
+def test_query_generation_is_bounded_for_empty_and_long_claims():
+    assert evidence_retriever.generate_search_queries("") == []
+    queries = evidence_retriever.generate_search_queries("word " * 1000)
+    assert 0 < len(queries) <= 2
+    assert all(len(query) <= 200 for query in queries)
+
+
+def test_orchestration_preserves_provenance_and_deduplicates_tracking_urls(monkeypatch):
+    monkeypatch.setattr(
+        evidence_retriever,
+        "search_gnews",
+        lambda *args: [
+            {
+                "source": "Publisher",
+                "description": "Story",
+                "url": "https://example.test/story?utm_source=news",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        evidence_retriever,
+        "search_gdelt",
+        lambda *args: [
+            {
+                "source": "Publisher",
+                "description": "Story copy",
+                "url": "https://example.test/story#comments",
+            }
+        ],
+    )
+
+    result = evidence_retriever.search_evidence("A specific claim")
+
+    assert len(result) == 1
+    assert result[0]["provider"] == "gnews"
+    assert result[0]["providers"] == ["gnews", "gdelt"]
+    assert result[0]["independence"] == "UNKNOWN"
+    assert result[0]["sourceQuality"]["reputation"] == "UNKNOWN"
+
+
+def test_provider_failure_does_not_discard_other_provider_results(monkeypatch):
+    monkeypatch.setattr(
+        evidence_retriever,
+        "search_gnews",
+        lambda *args: (_ for _ in ()).throw(httpx.ReadTimeout("slow")),
+    )
+    monkeypatch.setattr(
+        evidence_retriever,
+        "search_gdelt",
+        lambda *args: [
+            {
+                "source": "GDELT publisher",
+                "description": "Usable story",
+                "url": "https://example.test/story",
+            }
+        ],
+    )
+    diagnostics = {}
+
+    result = evidence_retriever.search_evidence(
+        "A specific claim",
+        diagnostics=diagnostics,
+    )
+
+    assert len(result) == 1
+    assert diagnostics["gnews"] == "error"
+    assert result[0]["provider"] == "gdelt"

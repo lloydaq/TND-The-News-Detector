@@ -81,6 +81,15 @@ class EvidenceAssessment(BaseModel):
     source: str
     description: str
     url: str | None = None
+    provider: str | None = None
+    providers: list[str] | None = None
+    published_at: str | None = Field(default=None, alias="publishedAt")
+    evidence_type: str | None = Field(default=None, alias="evidenceType")
+    source_quality: dict[str, bool | str] | None = Field(
+        default=None,
+        alias="sourceQuality",
+    )
+    independence: str | None = None
     content_status: str | None = Field(
         default=None,
         alias="contentStatus",
@@ -128,6 +137,18 @@ def _safe_article(article: Any) -> dict[str, str] | None:
     }
     if url:
         result["url"] = url
+    for field in ("provider", "publishedAt", "evidenceType", "independence"):
+        value = article.get(field)
+        if isinstance(value, str) and value:
+            result[field] = value
+    providers = article.get("providers")
+    if isinstance(providers, list):
+        result["providers"] = [
+            provider for provider in providers if isinstance(provider, str)
+        ]
+    source_quality = article.get("sourceQuality")
+    if isinstance(source_quality, dict):
+        result["sourceQuality"] = source_quality
     content_status = _text(article.get("contentStatus"))
     if content_status:
         result["contentStatus"] = content_status
@@ -166,7 +187,18 @@ def _fallback_result(evidence: list[dict[str, str]]) -> VerificationResult:
         assessment_data = {
             key: value
             for key, value in item.items()
-            if key in {"source", "description", "url", "contentStatus"}
+            if key in {
+                "source",
+                "description",
+                "url",
+                "contentStatus",
+                "provider",
+                "providers",
+                "publishedAt",
+                "evidenceType",
+                "independence",
+                "sourceQuality",
+            }
         }
         assessment_data.update(
             {

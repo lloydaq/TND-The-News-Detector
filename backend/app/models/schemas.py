@@ -28,6 +28,18 @@ class Evidence(BaseModel):
     source: str
     description: str
     url: str | None = None
+    provider: str | None = None
+    providers: list[str] | None = None
+    published_at: str | None = Field(default=None, alias="publishedAt")
+    evidence_type: Literal["HEADLINE_ONLY", "ARTICLE_TEXT"] | None = Field(
+        default=None,
+        alias="evidenceType",
+    )
+    source_quality: dict[str, bool | str] | None = Field(
+        default=None,
+        alias="sourceQuality",
+    )
+    independence: Literal["UNKNOWN", "SAME_ARTICLE"] | None = None
     content_status: Literal[
         "FETCHED",
         "UNAVAILABLE",
