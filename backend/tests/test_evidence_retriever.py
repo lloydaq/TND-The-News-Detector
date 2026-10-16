@@ -198,6 +198,19 @@ def test_missing_api_key_skips_gnews(monkeypatch):
     assert evidence_retriever.search_gnews("ISRO mission") == []
 
 
+def test_provider_diagnostics_expose_missing_configuration(monkeypatch):
+    monkeypatch.delenv("GNEWS_API_KEY", raising=False)
+    monkeypatch.setattr(evidence_retriever, "search_gdelt", lambda *args: [])
+    diagnostics = {}
+
+    assert evidence_retriever.search_evidence(
+        "ISRO mission",
+        diagnostics=diagnostics,
+    ) == []
+    assert diagnostics["gnews"] == "not_configured"
+    assert diagnostics["gdelt"] == "no_results"
+
+
 def test_missing_title_or_url_is_not_returned(monkeypatch):
     FakeClient.responses = [
         _response(
@@ -333,4 +346,3 @@ def test_invalid_url_schemes_are_rejected():
     valid = _normalise_article("Title", "https://example.test/valid", "Source")
     assert valid is not None
     assert valid["url"] == "https://example.test/valid"
-

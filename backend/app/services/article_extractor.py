@@ -4,11 +4,13 @@ import ipaddress
 import json
 import logging
 import socket
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Final
 from urllib.parse import ParseResult, urljoin, urlparse
 
 import httpx
+import httpcore
 import trafilatura
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, TemplateString
@@ -29,6 +31,73 @@ REQUEST_TIMEOUT: Final[float] = 12.0
 MAX_REDIRECTS: Final[int] = 5
 MIN_ARTICLE_TEXT_LENGTH: Final[int] = 200
 MAX_HTML_BYTES: Final[int] = 2_000_000
+
+
+class _SafeNetworkBackend(httpcore.SyncBackend):
+    """Connect only to addresses that pass the SSRF policy."""
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.NetworkStream:
+        addresses = _public_addresses(host)
+        if not addresses:
+            raise httpcore.ConnectError("Host resolved to a blocked address.")
+
+        source_address = None if local_address is None else (local_address, 0)
+        last_error: OSError | None = None
+        for address in addresses:
+            sock = socket.socket(socket.AF_INET6 if ":" in address else socket.AF_INET)
+            try:
+                if source_address is not None:
+                    sock.bind(source_address)
+                sock.settimeout(timeout)
+                target = (address, port, 0, 0) if ":" in address else (address, port)
+                sock.connect(target)
+                if socket_options:
+                    for option in socket_options:
+                        sock.setsockopt(*option)
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                return httpcore.SyncStream(sock)
+            except OSError as error:
+                last_error = error
+                sock.close()
+
+        raise httpcore.ConnectError("Unable to connect to the external webpage.") from last_error
+
+
+def _public_addresses(hostname: str) -> list[str]:
+    """Resolve a hostname and return only public IP addresses."""
+    try:
+        addresses = {
+            info[4][0]
+            for info in socket.getaddrinfo(
+                hostname,
+                None,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except socket.gaierror as error:
+        raise ArticleFetchError("Unable to fetch the external webpage.") from error
+
+    public: list[str] = []
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            continue
+        public.append(address)
+    return public
 
 ARTICLE_IGNORE_SELECTORS: Final[list[str]] = [
     "nav",
@@ -261,27 +330,8 @@ def _validate_hostname(hostname: str) -> None:
     if normalized in {"localhost", "localhost.localdomain"}:
         raise InvalidArticleURL("Invalid URL.")
 
-    try:
-        addresses = {
-            info[4][0]
-            for info in socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
-        }
-    except socket.gaierror as error:
-        raise ArticleFetchError("Unable to fetch the external webpage.") from error
-
-    if not addresses:
+    if not _public_addresses(normalized):
         raise InvalidArticleURL("Invalid URL.")
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            raise InvalidArticleURL("Invalid URL.")
 
 
 def _is_msn_domain(hostname: str | None) -> bool:
@@ -295,9 +345,17 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
     current_url = url
     ua = user_agent or DEFAULT_BROWSER_USER_AGENT
     try:
+        transport = httpx.HTTPTransport(trust_env=False)
+        # HTTPTransport does not expose its httpcore backend publicly. Replacing
+        # its pool keeps hostname-based HTTP Host/TLS SNI while pinning TCP to
+        # the address checked by _SafeNetworkBackend.
+        transport._pool = httpcore.ConnectionPool(
+            network_backend=_SafeNetworkBackend(),
+        )
         with httpx.Client(
             follow_redirects=False,
             timeout=REQUEST_TIMEOUT,
+            transport=transport,
             headers={
                 "User-Agent": ua,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -305,37 +363,50 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
             },
         ) as client:
             for _ in range(MAX_REDIRECTS + 1):
-                response = client.get(current_url)
-                if response.is_redirect:
-                    location = response.headers.get("location")
-                    if not location:
-                        raise ArticleFetchError("Unable to fetch the external webpage.")
-                    current_url = urljoin(current_url, location)
-                    _validate_url(current_url)
-                    continue
-                response.raise_for_status()
-                content_type = response.headers.get("content-type", "").lower()
-                if content_type and not (
-                    "text/html" in content_type
-                    or "application/xhtml+xml" in content_type
-                ):
-                    raise ArticleContentError(
-                        "The external response is not an HTML document."
+                response_context = (
+                    client.stream("GET", current_url)
+                    if hasattr(client, "stream")
+                    else nullcontext(client.get(current_url))
+                )
+                with response_context as response:
+                    if response.is_redirect:
+                        location = response.headers.get("location")
+                        if not location:
+                            raise ArticleFetchError("Unable to fetch the external webpage.")
+                        current_url = urljoin(current_url, location)
+                        _validate_url(current_url)
+                        continue
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "").lower()
+                    if content_type and not (
+                        "text/html" in content_type
+                        or "application/xhtml+xml" in content_type
+                    ):
+                        raise ArticleContentError(
+                            "The external response is not an HTML document."
+                        )
+                    content_length = response.headers.get("content-length")
+                    if content_length:
+                        try:
+                            if int(content_length) > MAX_HTML_BYTES:
+                                raise ArticleContentError(
+                                    "The external response is too large."
+                                )
+                        except ValueError:
+                            pass
+                    body = bytearray()
+                    chunks = (
+                        response.iter_bytes()
+                        if hasattr(response, "iter_bytes")
+                        else (response.content,)
                     )
-                content_length = response.headers.get("content-length")
-                if content_length:
-                    try:
-                        if int(content_length) > MAX_HTML_BYTES:
+                    for chunk in chunks:
+                        body.extend(chunk)
+                        if len(body) > MAX_HTML_BYTES:
                             raise ArticleContentError(
                                 "The external response is too large."
                             )
-                    except ValueError:
-                        pass
-                if len(response.content) > MAX_HTML_BYTES:
-                    raise ArticleContentError(
-                        "The external response is too large."
-                    )
-                return response.text
+                    return bytes(body).decode(response.encoding or "utf-8", errors="replace")
     except InvalidArticleURL:
         raise
     except httpx.TimeoutException as error:

@@ -80,6 +80,12 @@ Install the dependencies:
 pip install -r requirements.txt
 ```
 
+Create a `.env` file from `.env.example` before starting the backend. Set
+`GNEWS_API_KEY` if GNews evidence is required, and ensure the configured
+Ollama model is installed locally (for example, `ollama pull llama3.2:3b`).
+Configuration is read from environment variables; no project-specific
+absolute paths are required.
+
 ### 3. Run the Backend
 
 From the `backend` directory, run:
@@ -91,6 +97,12 @@ uvicorn app.main:app --reload
 The API will be available at:
 
 `http://127.0.0.1:8000`
+
+The analysis endpoint limits concurrent work and outbound article responses.
+If evidence retrieval or Ollama verification is unavailable, the response
+uses `analysisStatus: "DEGRADED"` and includes safe `degradationReasons`
+instead of presenting the result as fully verified. Risk scores remain
+heuristics and are not probabilities or proof of truth.
 
 Health check:
 

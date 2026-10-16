@@ -12,7 +12,6 @@ default_origins = [
     "http://127.0.0.1:5500",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "null",
 ]
 env_origins = os.getenv("ALLOWED_ORIGINS", "")
 if env_origins:

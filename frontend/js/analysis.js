@@ -4,7 +4,7 @@ const API_BASE_URL =
 
 async function analyzeNews(input, inputType, externalSignal = null) {
   let response;
-  const timeoutMs = 1200000;
+  const timeoutMs = 180000;
   const controller = new AbortController();
   let timedOut = false;
 
@@ -37,7 +37,7 @@ async function analyzeNews(input, inputType, externalSignal = null) {
   } catch (error) {
     clearTimeout(timer);
     if (timedOut || error.name === "TimeoutError") {
-      const timeoutErr = new Error("The analysis request timed out (120s).");
+      const timeoutErr = new Error("The analysis request timed out (180s).");
       timeoutErr.name = "TimeoutError";
       timeoutErr.isTimeout = true;
       throw timeoutErr;
@@ -107,4 +107,3 @@ async function analyzeNews(input, inputType, externalSignal = null) {
   }
   return result;
 }
-

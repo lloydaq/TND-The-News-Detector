@@ -207,3 +207,50 @@ def test_existing_fetcher_revalidates_redirect_destinations(monkeypatch):
         pass
     else:
         raise AssertionError("Expected unsafe redirect rejection")
+
+
+def test_public_address_policy_rejects_ipv4_mapped_private_ipv6():
+    addresses = article_extractor._public_addresses
+
+    original = article_extractor.socket.getaddrinfo
+    article_extractor.socket.getaddrinfo = lambda *args, **kwargs: [
+        (0, 0, 0, "", ("::ffff:127.0.0.1", 0, 0, 0))
+    ]
+    try:
+        assert addresses("attacker.test") == []
+    finally:
+        article_extractor.socket.getaddrinfo = original
+
+
+def test_streaming_fetch_rejects_body_after_decoded_limit(monkeypatch):
+    class StreamingResponse:
+        headers = {"content-type": "text/html"}
+        encoding = "utf-8"
+        is_redirect = False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_bytes(self):
+            yield b"x" * article_extractor.MAX_HTML_BYTES
+            yield b"x"
+
+    class StreamingContext:
+        def __enter__(self):
+            return StreamingResponse()
+
+        def __exit__(self, *args):
+            return False
+
+    class StreamingClient(FakeHttpClient):
+        def stream(self, method, url):
+            return StreamingContext()
+
+    monkeypatch.setattr(article_extractor.httpx, "Client", StreamingClient)
+
+    try:
+        article_extractor._fetch_html(EVIDENCE["url"])
+    except ArticleContentError as error:
+        assert "too large" in str(error)
+    else:
+        raise AssertionError("Expected streaming response rejection")

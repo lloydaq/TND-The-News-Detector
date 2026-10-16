@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import inspect
 from typing import Any
 
 import httpx
@@ -8,11 +9,7 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# Load the project-level .env file.
-# Expected location: C:\project\.env or root
 load_dotenv()
-if not os.getenv("GNEWS_API_KEY"):
-    load_dotenv("C:/project/.env")
 
 GNEWS_API_URL = "https://gnews.io/api/v4/search"
 GDELT_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
@@ -23,6 +20,17 @@ REQUEST_TIMEOUT = 15.0
 GDELT_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
 
 EvidenceItem = dict[str, str]
+
+
+def _search_provider(
+    provider: Any,
+    query: str,
+    limit: int,
+    diagnostics: dict[str, str] | None,
+) -> list[EvidenceItem]:
+    if diagnostics is not None and "diagnostics" in inspect.signature(provider).parameters:
+        return provider(query, limit, diagnostics=diagnostics)
+    return provider(query, limit)
 
 _QUERY_FILLER_WORDS = {
     "a",
@@ -163,6 +171,7 @@ def _normalise_article(
 def search_gnews(
     query: str,
     limit: int = DEFAULT_LIMIT,
+    diagnostics: dict[str, str] | None = None,
 ) -> list[EvidenceItem]:
     """Search GNews for related news articles.
 
@@ -176,10 +185,12 @@ def search_gnews(
         return []
 
     api_key = os.getenv("GNEWS_API_KEY", "").strip()
+    if diagnostics is not None:
+        diagnostics["gnews"] = "configured" if api_key else "not_configured"
 
     if not api_key:
         logger.warning(
-            "GNews API key is missing. Check C:/project/.env."
+            "GNews API key is missing. Configure GNEWS_API_KEY in the environment."
         )
         return []
 
@@ -384,6 +395,7 @@ def search_evidence(
     query: str,
     limit: int = DEFAULT_LIMIT,
     cache: dict[str, list[EvidenceItem]] | None = None,
+    diagnostics: dict[str, str] | None = None,
 ) -> list[EvidenceItem]:
     """Search GNews directly and broadly, then use GDELT as a fallback."""
 
@@ -398,15 +410,19 @@ def search_evidence(
     limit = _normalise_limit(limit)
 
     try:
-        evidence = search_gnews(query, limit)
+        evidence = _search_provider(search_gnews, query, limit, diagnostics)
     except httpx.HTTPError as exc:
         logger.warning(
             "GNews request failed while retrieving evidence: %s",
             type(exc).__name__,
         )
+        if diagnostics is not None:
+            diagnostics["gnews"] = "error"
         evidence = []
 
     if evidence:
+        if diagnostics is not None:
+            diagnostics["gnews"] = "results"
         logger.info("Using GNews evidence.")
         if cache is not None:
             cache[query] = evidence
@@ -419,15 +435,24 @@ def search_evidence(
             "broader query."
         )
         try:
-            evidence = search_gnews(broadened_query, limit)
+            evidence = _search_provider(
+                search_gnews,
+                broadened_query,
+                limit,
+                diagnostics,
+            )
         except httpx.HTTPError as exc:
             logger.warning(
                 "Broader GNews request failed while retrieving evidence: %s",
                 type(exc).__name__,
             )
+            if diagnostics is not None:
+                diagnostics["gnews"] = "error"
             evidence = []
 
         if evidence:
+            if diagnostics is not None:
+                diagnostics["gnews"] = "results"
             logger.info("Using GNews evidence from the broader query.")
             if cache is not None:
                 cache[query] = evidence
@@ -436,15 +461,19 @@ def search_evidence(
     logger.info("GNews returned no usable evidence; trying GDELT.")
     fallback_query = broadened_query or query
     try:
-        evidence = search_gdelt(fallback_query, limit)
+        evidence = _search_provider(search_gdelt, fallback_query, limit, diagnostics)
     except httpx.HTTPError as exc:
         logger.warning(
             "GDELT request failed while retrieving evidence: %s",
             type(exc).__name__,
         )
+        if diagnostics is not None:
+            diagnostics["gdelt"] = "error"
         evidence = []
 
     if evidence:
+        if diagnostics is not None:
+            diagnostics["gdelt"] = "results"
         logger.info("Using GDELT fallback evidence.")
         if cache is not None:
             cache[query] = evidence
@@ -456,4 +485,8 @@ def search_evidence(
 
     if cache is not None:
         cache[query] = []
-    return []
+    if diagnostics is not None:
+        diagnostics.setdefault("gdelt", "no_results")
+        if diagnostics.get("gnews") == "configured":
+            diagnostics["gnews"] = "no_results"
+    return []

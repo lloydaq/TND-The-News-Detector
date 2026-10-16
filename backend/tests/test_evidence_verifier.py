@@ -186,6 +186,7 @@ def test_ollama_timeout_keeps_evidence_unassessed(monkeypatch):
 
     assert result.verification_status == "UNVERIFIED"
     assert result.evidence[0].model_dump(exclude_none=True) == EVIDENCE[0]
+    assert result.degraded is True
 
 
 def test_empty_evidence_does_not_call_ollama(monkeypatch):
@@ -762,4 +763,3 @@ def test_claim_involving_dates_and_quantities(monkeypatch):
     result = evidence_verifier.verify_evidence(dated_claim, article)
     assert result.evidence[0].relevance == "SUPPORTS"
     assert result.verification_status == "SUPPORTED"
-

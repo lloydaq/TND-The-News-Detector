@@ -68,3 +68,11 @@ class AnalysisResponse(BaseModel):
     source_reliability: str = Field(alias="sourceReliability")
     signals: list[Signal]
     claims: list[Claim]
+    analysis_status: Literal["COMPLETE", "DEGRADED"] = Field(
+        default="COMPLETE",
+        alias="analysisStatus",
+    )
+    degradation_reasons: list[str] = Field(
+        default_factory=list,
+        alias="degradationReasons",
+    )

@@ -2,5 +2,6 @@ fastapi
 uvicorn[standard]
 pydantic
 httpx
+httpcore>=1.0,<2
 trafilatura
 beautifulsoup4

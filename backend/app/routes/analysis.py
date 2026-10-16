@@ -1,7 +1,10 @@
+import threading
+
 from fastapi import APIRouter, HTTPException, status
 
 from app.models.schemas import AnalysisResponse, AnalyzeRequest
 from app.services.analyzer import analyze_content
+from app.services.ollama_config import MAX_CONCURRENT_ANALYSES
 from app.services.article_extractor import (
     ArticleContentError,
     ArticleFetchError,
@@ -10,10 +13,24 @@ from app.services.article_extractor import (
 )
 
 router = APIRouter()
+_analysis_slots = threading.BoundedSemaphore(MAX_CONCURRENT_ANALYSES)
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
 def analyze(request: AnalyzeRequest) -> AnalysisResponse:
+    if not _analysis_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Too many analyses are running. Please try again shortly.",
+        )
+
+    try:
+        return _analyze(request)
+    finally:
+        _analysis_slots.release()
+
+
+def _analyze(request: AnalyzeRequest) -> AnalysisResponse:
     if request.type == "url":
         try:
             article = extract_article(request.content)
@@ -47,4 +64,3 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(error),
         ) from error
-

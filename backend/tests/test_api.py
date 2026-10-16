@@ -36,6 +36,17 @@ def test_cors_headers_allowed_origin(client):
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5500"
 
 
+def test_cors_does_not_allow_null_origin(client):
+    response = client.options(
+        "/api/analyze",
+        headers={
+            "Origin": "null",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert response.headers.get("access-control-allow-origin") is None
+
+
 def test_analyze_empty_payload_rejected(client):
     response = client.post("/api/analyze", json={})
     assert response.status_code == 422
