@@ -134,6 +134,12 @@ def analyze_content(
 
     started_at = time.monotonic()
     degradation_reasons: set[str] = set()
+    if article and article.status == "PARTIAL":
+        degradation_reasons.add("Article extraction was partial")
+    if article and article.warnings:
+        degradation_reasons.update(
+            f"Extraction warning: {warning}" for warning in article.warnings
+        )
 
     prompt = f"""
 You help users critically evaluate news articles.

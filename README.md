@@ -104,6 +104,14 @@ uses `analysisStatus: "DEGRADED"` and includes safe `degradationReasons`
 instead of presenting the result as fully verified. Risk scores remain
 heuristics and are not probabilities or proof of truth.
 
+For URL input, the backend validates the destination at connection time,
+follows only validated HTTP(S) redirects, streams HTML with a 2 MB response
+limit, and then tries Trafilatura, JSON-LD `articleBody`, and a constrained
+`<article>`/`<main>` paragraph fallback. The extractor records the method,
+word count, metadata warnings, and whether the result is partial for internal
+analysis diagnostics. Canonical metadata is validated but is never fetched
+automatically.
+
 Health check:
 
 `http://127.0.0.1:8000/api/health`
@@ -120,19 +128,25 @@ The backend's CORS configuration currently supports local development origins.
 
 ## Current Limitations
 
-* The analysis engine currently returns mock risk scores, signals, claims, and evidence.
-* Article extraction depends on the accessibility and structure of the source website.
-* Actual claim verification against independent evidence is still under development.
-* Risk scores should not be interpreted as verified measures of truthfulness.
+* Extraction cannot execute JavaScript, bypass paywalls, or recover content that
+  a website does not send in its HTML response.
+* Websites may block requests or return unsupported content; these failures are
+  reported as API errors rather than being treated as article text.
+* Short, metadata-only, navigation-heavy, and boilerplate-only pages are
+  rejected or reported as partial where appropriate.
+* Ollama and evidence-provider failures produce degraded analysis; they do not
+  prove that a claim is true or false.
+* Risk scores are explainable heuristics, not probabilities or verified
+  measures of truthfulness.
 
 ## Roadmap
 
 * [ ] Develop an evidence-based claim analysis pipeline.
 * [ ] Integrate reliable external evidence sources.
 * [ ] Distinguish supported, contradicted, and unverified claims.
-* [ ] Improve error handling and article extraction.
+* [x] Improve error handling and article extraction.
 * [ ] Connect the frontend to live backend analysis.
-* [ ] Add automated tests for API endpoints and article extraction.
+* [x] Add automated tests for API endpoints and article extraction.
 * [ ] Improve deployment and configuration.
 
 ## Disclaimer

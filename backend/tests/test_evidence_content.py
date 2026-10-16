@@ -1,4 +1,5 @@
 import httpx
+from urllib.parse import urlparse
 
 from app.services import evidence_content
 from app.services import article_extractor
@@ -254,3 +255,134 @@ def test_streaming_fetch_rejects_body_after_decoded_limit(monkeypatch):
         assert "too large" in str(error)
     else:
         raise AssertionError("Expected streaming response rejection")
+
+
+def test_metadata_only_page_is_rejected(monkeypatch):
+    monkeypatch.setattr(article_extractor.trafilatura, "extract", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract_metadata",
+        lambda *args, **kwargs: None,
+    )
+    html = "<html><head><title>Only a headline</title></head><body><h1>Only a headline</h1></body></html>"
+
+    article, had_metadata = article_extractor._extract_from_html(
+        html,
+        urlparse("https://example.test/story"),
+    )
+
+    assert article is None
+    assert had_metadata is True
+
+
+def test_jsonld_article_body_and_metadata_are_extracted(monkeypatch):
+    monkeypatch.setattr(article_extractor.trafilatura, "extract", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract_metadata",
+        lambda *args, **kwargs: None,
+    )
+    body = " ".join(f"Sentence {index} contains useful reporting." for index in range(8))
+    html = f"""
+    <script type="application/ld+json">
+    {{
+      "@type": "NewsArticle",
+      "headline": "A reported story",
+      "author": {{"name": "Reporter"}},
+      "datePublished": "2025-01-01",
+      "publisher": {{"name": "Example News"}},
+      "articleBody": "{body}",
+      "url": "https://example.test/story"
+    }}
+    </script>
+    """
+
+    article, _ = article_extractor._extract_from_html(
+        html,
+        urlparse("https://example.test/story"),
+    )
+
+    assert article is not None
+    assert article.extraction_method == "jsonld"
+    assert article.title == "A reported story"
+    assert article.publisher == "Example News"
+    assert article.author == "Reporter"
+    assert article.published_at == "2025-01-01"
+    assert article.status == "SUCCESS"
+
+
+def test_duplicate_fallback_paragraphs_are_removed(monkeypatch):
+    monkeypatch.setattr(article_extractor.trafilatura, "extract", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract_metadata",
+        lambda *args, **kwargs: None,
+    )
+    paragraph = (
+        "This is a substantial reported paragraph with enough words to be useful "
+        "and to provide context for readers following the story."
+    )
+    second_paragraph = (
+        "The second reported paragraph adds independent context and relevant details "
+        "about the event, its timing, and the people involved."
+    )
+    html = (
+        "<article>"
+        + "".join(
+            f"<p>{value}</p>"
+            for value in (paragraph, second_paragraph, paragraph, second_paragraph)
+        )
+        + "</article>"
+    )
+
+    article, _ = article_extractor._extract_from_html(
+        html,
+        urlparse("https://example.test/story"),
+    )
+
+    assert article is not None
+    assert article.extraction_method == "article_element"
+    assert article.text.count(paragraph) == 1
+    assert article.status == "PARTIAL"
+
+
+def test_unsafe_canonical_metadata_is_discarded_without_fetching(monkeypatch):
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract",
+        lambda *args, **kwargs: " ".join(
+            f"Reported sentence {index}." for index in range(40)
+        ),
+    )
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract_metadata",
+        lambda *args, **kwargs: None,
+    )
+    html = (
+        '<link rel="canonical" href="http://127.0.0.1/private">'
+        "<title>Reported story</title>"
+    )
+
+    article, _ = article_extractor._extract_from_html(
+        html,
+        urlparse("https://example.test/story"),
+    )
+
+    assert article is not None
+    assert article.canonical_url is None
+    assert "A safe canonical URL was not available." in article.warnings
+
+
+def test_http_status_is_preserved_for_fetch_failures(monkeypatch):
+    response = _http_response(b"forbidden", status_code=403)
+    monkeypatch.setattr(article_extractor.httpx, "Client", FakeHttpClient)
+    FakeHttpClient.responses = [response]
+
+    try:
+        article_extractor._fetch_html(EVIDENCE["url"])
+    except ArticleFetchError as error:
+        assert error.status_code == 403
+        assert error.failure_status == "FETCH_ERROR"
+    else:
+        raise AssertionError("Expected fetch failure")

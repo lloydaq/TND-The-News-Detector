@@ -6,7 +6,7 @@ import logging
 import socket
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Literal
 from urllib.parse import ParseResult, urljoin, urlparse
 
 import httpx
@@ -30,6 +30,7 @@ USER_AGENT: Final[str] = DEFAULT_BROWSER_USER_AGENT
 REQUEST_TIMEOUT: Final[float] = 12.0
 MAX_REDIRECTS: Final[int] = 5
 MIN_ARTICLE_TEXT_LENGTH: Final[int] = 200
+MIN_ARTICLE_WORDS: Final[int] = 35
 MAX_HTML_BYTES: Final[int] = 2_000_000
 
 
@@ -148,17 +149,31 @@ BOILERPLATE_PATTERNS: Final[list[str]] = [
 class ArticleExtractionError(Exception):
     """Base error for URL validation, fetching, or article extraction."""
 
+    failure_status = "ERROR"
+
 
 class InvalidArticleURL(ArticleExtractionError):
     """The supplied URL is not safe or valid for external fetching."""
+
+    failure_status = "BLOCKED"
 
 
 class ArticleFetchError(ArticleExtractionError):
     """The external webpage could not be fetched."""
 
+    failure_status = "FETCH_ERROR"
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        if status_code == 408:
+            self.failure_status = "TIMEOUT"
+
 
 class ArticleContentError(ArticleExtractionError):
     """The webpage did not contain enough extractable article content."""
+
+    failure_status = "INSUFFICIENT_CONTENT"
 
 
 @dataclass(frozen=True)
@@ -170,6 +185,10 @@ class ExtractedArticle:
     author: str | None = None
     published_at: str | None = None
     canonical_url: str | None = None
+    status: Literal["SUCCESS", "PARTIAL"] = "SUCCESS"
+    extraction_method: str = "unknown"
+    word_count: int = 0
+    warnings: tuple[str, ...] = ()
 
 
 def extract_article(url: str) -> ExtractedArticle:
@@ -193,7 +212,7 @@ def extract_article(url: str) -> ExtractedArticle:
             article, had_metadata = _extract_from_html(fallback_html, parsed_url)
             if article:
                 return article
-        except Exception as e:
+        except ArticleExtractionError as e:
             logger.debug("Fallback crawler fetch failed: %s", e)
 
     if had_metadata:
@@ -293,6 +312,23 @@ def _extract_from_html(
     )
     source = _hostname(parsed_url.hostname)
 
+    safe_canonical_url = _safe_metadata_url(
+        canonical_url,
+        parsed_url,
+    )
+    warnings: list[str] = []
+    word_count = len(text.split())
+    if extraction_method == "article_element":
+        warnings.append("Used constrained HTML fallback extraction.")
+    if word_count < MIN_ARTICLE_WORDS:
+        warnings.append("The extracted article is unusually short.")
+    if not author:
+        warnings.append("Author metadata was not available.")
+    if not published_at:
+        warnings.append("Publication date metadata was not available.")
+    if not safe_canonical_url:
+        warnings.append("A safe canonical URL was not available.")
+
     return (
         ExtractedArticle(
             title=title,
@@ -301,7 +337,16 @@ def _extract_from_html(
             publisher=publisher,
             author=author,
             published_at=published_at,
-            canonical_url=canonical_url,
+            canonical_url=safe_canonical_url,
+            status=(
+                "PARTIAL"
+                if extraction_method == "article_element"
+                or word_count < MIN_ARTICLE_WORDS
+                else "SUCCESS"
+            ),
+            extraction_method=extraction_method,
+            word_count=word_count,
+            warnings=tuple(warnings),
         ),
         had_metadata,
     )
@@ -410,9 +455,14 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
     except InvalidArticleURL:
         raise
     except httpx.TimeoutException as error:
-        raise ArticleFetchError("Unable to fetch the external webpage.") from error
+        timeout_error = ArticleFetchError("Unable to fetch the external webpage.")
+        timeout_error.failure_status = "TIMEOUT"
+        raise timeout_error from error
     except httpx.HTTPStatusError as error:
-        raise ArticleFetchError("Unable to fetch the external webpage.") from error
+        raise ArticleFetchError(
+            "Unable to fetch the external webpage.",
+            status_code=error.response.status_code,
+        ) from error
     except httpx.RequestError as error:
         raise ArticleFetchError("Unable to fetch the external webpage.") from error
 
@@ -483,7 +533,7 @@ def _extract_single_ld_metadata(obj: dict[str, Any]) -> dict[str, Any]:
     description = _clean_value(obj.get("description"))
     url = _clean_value(obj.get("url"))
     date_published = _clean_value(
-        obj.get("datePublished") or obj.get("dateCreated") or obj.get("dateModified")
+        obj.get("datePublished") or obj.get("dateCreated")
     )
 
     # Author resolution from JSON-LD
@@ -706,7 +756,28 @@ def _resolve_publisher(
 
 def _is_boilerplate_paragraph(text: str) -> bool:
     lower = text.lower()
-    return any(p in lower for p in BOILERPLATE_PATTERNS)
+    words = lower.split()
+    return len(words) <= 12 and any(
+        lower == pattern
+        or lower.startswith(f"{pattern}.")
+        or lower.startswith(f"{pattern}:")
+        for pattern in BOILERPLATE_PATTERNS
+    )
+
+
+def _safe_metadata_url(
+    value: str | None,
+    base_url: ParseResult,
+) -> str | None:
+    """Keep canonical metadata only when it passes the URL policy."""
+    if not value:
+        return None
+    candidate = urljoin(base_url.geturl(), value)
+    try:
+        _validate_url(candidate)
+    except ArticleExtractionError:
+        return None
+    return candidate
 
 
 def _clean_paragraph_list(paragraphs: list[str]) -> str:
