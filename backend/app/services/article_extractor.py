@@ -17,6 +17,12 @@ from bs4.element import NavigableString, TemplateString
 
 logger = logging.getLogger(__name__)
 
+
+def _redacted_url(url: str) -> str:
+    """Keep URL logs useful without recording query parameters or fragments."""
+    parsed = urlparse(url)
+    return parsed._replace(query="", fragment="").geturl()
+
 DEFAULT_BROWSER_USER_AGENT: Final[str] = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -207,7 +213,10 @@ def extract_article(url: str) -> ExtractedArticle:
     # Fallback to crawler UA if initial browser UA yielded insufficient body
     if initial_ua != CRAWLER_FALLBACK_USER_AGENT:
         try:
-            logger.debug("Retrying fetch with crawler-compatible UA for URL: %s", url)
+            logger.debug(
+                "Retrying fetch with crawler-compatible UA for URL: %s",
+                _redacted_url(url),
+            )
             fallback_html = _fetch_html(url, user_agent=CRAWLER_FALLBACK_USER_AGENT)
             article, had_metadata = _extract_from_html(fallback_html, parsed_url)
             if article:
@@ -216,8 +225,11 @@ def extract_article(url: str) -> ExtractedArticle:
             logger.debug("Fallback crawler fetch failed: %s", e)
 
     if had_metadata:
-        logger.warning("Article extraction yielded metadata_only for URL: %s", url)
-    logger.error("Article extraction failed for URL: %s", url)
+        logger.warning(
+            "Article extraction yielded metadata_only for URL: %s",
+            _redacted_url(url),
+        )
+    logger.error("Article extraction failed for URL: %s", _redacted_url(url))
     raise ArticleContentError("Unable to extract the article content from this URL.")
 
 

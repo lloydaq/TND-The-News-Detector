@@ -37,24 +37,24 @@ def _analyze(request: AnalyzeRequest) -> AnalysisResponse:
         except InvalidArticleURL as error:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(error),
+                detail="Invalid URL.",
             ) from error
         except ArticleFetchError as error:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=str(error),
+                detail="Unable to fetch the external webpage.",
             ) from error
         except ArticleContentError as error:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=str(error),
+                detail="No article content could be extracted.",
             ) from error
         try:
             return analyze_content(request, article)
         except RuntimeError as error:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=str(error),
+                detail="Ollama analysis is unavailable.",
             ) from error
 
     try:
@@ -62,5 +62,5 @@ def _analyze(request: AnalyzeRequest) -> AnalysisResponse:
     except RuntimeError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(error),
+            detail="Ollama analysis is unavailable.",
         ) from error

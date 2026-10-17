@@ -99,6 +99,9 @@ The API will be available at:
 `http://127.0.0.1:8000`
 
 The analysis endpoint limits concurrent work and outbound article responses.
+Requests are limited to a 512 KiB HTTP body, including fields ignored by the
+request schema. The JSON `content` field remains limited to 100,000 characters.
+GNews and GDELT responses are streamed and capped at 512 KiB before parsing.
 If evidence retrieval or Ollama verification is unavailable, the response
 uses `analysisStatus: "DEGRADED"` and includes safe `degradationReasons`
 instead of presenting the result as fully verified. Risk scores remain
@@ -121,6 +124,8 @@ limit, and then tries Trafilatura, JSON-LD `articleBody`, and a constrained
 word count, metadata warnings, and whether the result is partial for internal
 analysis diagnostics. Canonical metadata is validated but is never fetched
 automatically.
+GDELT does not automatically follow redirects; provider redirects are treated
+as provider failures rather than being fetched by the application.
 
 Health check:
 
@@ -189,6 +194,10 @@ fabricated model references never create evidence or upgrade a claim.
   source reputation or truthfulness. Syndicated copies may not be independent.
 * Risk scores are explainable heuristics, not probabilities or verified
   measures of truthfulness.
+* The API has a process-local analysis concurrency limit but no distributed
+  rate limiter. If deployed publicly or with multiple workers, configure
+  request rate limiting and body limits at the reverse proxy or gateway.
+  Local development is the current deployment assumption.
 
 ## Roadmap
 

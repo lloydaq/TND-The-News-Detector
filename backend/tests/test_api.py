@@ -67,6 +67,33 @@ def test_analyze_content_too_long_rejected(client):
     assert response.status_code == 422
 
 
+def test_analyze_request_body_limit_rejects_oversized_ignored_fields(client):
+    response = client.post(
+        "/api/analyze",
+        json={
+            "type": "text",
+            "content": "valid",
+            "ignored": "x" * 600_000,
+        },
+    )
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Request body is too large."}
+
+
+def test_analysis_response_invariants_are_enforced():
+    with pytest.raises(ValueError):
+        AnalysisResponse(
+            title="Title",
+            source="Source",
+            publisher="Publisher",
+            riskScore=101,
+            riskLabel="High Risk",
+            sourceReliability="Unknown",
+            signals=[],
+            claims=[],
+        )
+
+
 def test_analyze_text_valid_payload_and_response_schema(client, monkeypatch):
     def fake_analyze_content(request, article=None):
         return AnalysisResponse(
@@ -173,3 +200,4 @@ def test_analyze_runtime_error_returns_503(client, monkeypatch):
     )
     assert response.status_code == 503
     assert "Ollama" in response.json()["detail"]
+    assert "Local AI" not in response.json()["detail"]

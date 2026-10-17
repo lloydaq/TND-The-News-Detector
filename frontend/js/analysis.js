@@ -78,21 +78,41 @@ async function analyzeNews(input, inputType, externalSignal = null) {
     throw new Error("The analysis server returned invalid JSON.");
   }
 
+  const riskLabels = new Set(["Low Risk", "Needs Verification", "High Risk"]);
+  const reliabilityValues = new Set(["Unknown", "Low", "Moderate", "High"]);
+  const signalStatuses = new Set(["positive", "warning", "unknown"]);
+  const claimStatuses = new Set([
+    "SUPPORTED",
+    "CONTRADICTED",
+    "INSUFFICIENT_EVIDENCE",
+    "MIXED",
+    "MIXED_EVIDENCE",
+    "UNVERIFIABLE",
+    "UNVERIFIED",
+  ]);
   if (
     !result ||
     typeof result.title !== "string" ||
     typeof result.source !== "string" ||
     typeof result.publisher !== "string" ||
-    typeof result.riskScore !== "number" ||
-    typeof result.riskLabel !== "string" ||
-    typeof result.sourceReliability !== "string" ||
+    !Number.isInteger(result.riskScore) ||
+    result.riskScore < 0 ||
+    result.riskScore > 100 ||
+    !riskLabels.has(result.riskLabel) ||
+    !reliabilityValues.has(result.sourceReliability) ||
+    !["COMPLETE", "DEGRADED"].includes(result.analysisStatus || "COMPLETE") ||
+    (result.degradationReasons !== undefined &&
+      (!Array.isArray(result.degradationReasons) ||
+        result.degradationReasons.some((reason) => typeof reason !== "string"))) ||
+    (result.analysisExplanation !== undefined &&
+      typeof result.analysisExplanation !== "string") ||
     !Array.isArray(result.signals) ||
     !Array.isArray(result.claims) ||
     result.signals.some(
       (signal) =>
         !signal ||
         typeof signal.name !== "string" ||
-        typeof signal.status !== "string",
+        !signalStatuses.has(signal.status),
     ) ||
     result.claims.some(
       (claim) =>
@@ -100,7 +120,10 @@ async function analyzeNews(input, inputType, externalSignal = null) {
         typeof claim.id !== "number" ||
         typeof claim.text !== "string" ||
         typeof claim.status !== "string" ||
-        !Array.isArray(claim.evidence),
+        !Array.isArray(claim.evidence) ||
+        !claimStatuses.has(
+          (claim.verificationStatus || claim.verification_status || "").toUpperCase(),
+        ),
     )
   ) {
     throw new Error("The analysis server returned an invalid response.");

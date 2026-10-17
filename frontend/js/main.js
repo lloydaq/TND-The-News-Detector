@@ -249,7 +249,7 @@ function createClaim(claim, index) {
   } else if (verStatus === "CONTRADICTED") {
     statusText = "Contradicted";
     statusClass = "warning";
-  } else if (verStatus === "MIXED_EVIDENCE") {
+  } else if (verStatus === "MIXED" || verStatus === "MIXED_EVIDENCE") {
     statusText = "Mixed Evidence";
     statusClass = "needs";
   } else {

@@ -14,9 +14,10 @@ def _response(payload, status_code=200):
 class FakeClient:
     responses = []
     queries = []
+    init_kwargs = []
 
     def __init__(self, *args, **kwargs):
-        pass
+        self.__class__.init_kwargs.append(kwargs)
 
     def __enter__(self):
         return self
@@ -123,6 +124,22 @@ def test_gdelt_is_used_after_both_gnews_queries_fail(monkeypatch):
         "ISRO announced a new satellite mission",
         "ISRO announced a new satellite mission",
     ]
+    assert FakeClient.init_kwargs[-1]["follow_redirects"] is False
+
+
+def test_provider_oversized_response_is_ignored(monkeypatch):
+    oversized = httpx.Response(
+        200,
+        content=b"x" * (evidence_retriever.MAX_PROVIDER_RESPONSE_BYTES + 1),
+        request=httpx.Request("GET", "https://provider.test/search"),
+    )
+    FakeClient.responses = [oversized]
+    FakeClient.queries = []
+    FakeClient.init_kwargs = []
+    monkeypatch.setattr(evidence_retriever.httpx, "Client", FakeClient)
+    monkeypatch.setenv("GNEWS_API_KEY", "test-key")
+
+    assert evidence_retriever.search_gnews("ISRO mission") == []
 
 
 def test_no_provider_results_returns_empty_list(monkeypatch):

@@ -1,4 +1,5 @@
 import httpx
+import logging
 from urllib.parse import urlparse
 
 from app.services import evidence_content
@@ -144,6 +145,36 @@ def test_missing_url_is_preserved_without_fetching(monkeypatch):
 
 def test_httpx_response_types_can_be_mapped_by_existing_extractor():
     assert issubclass(httpx.ReadTimeout, httpx.RequestError)
+
+
+def test_article_extraction_logs_redact_url_query(monkeypatch, caplog):
+    monkeypatch.setattr(
+        article_extractor,
+        "_validate_url",
+        lambda value: urlparse(value),
+    )
+    monkeypatch.setattr(
+        article_extractor,
+        "_fetch_html",
+        lambda *args, **kwargs: "<html></html>",
+    )
+    monkeypatch.setattr(
+        article_extractor,
+        "_extract_from_html",
+        lambda *args, **kwargs: (None, False),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=article_extractor.logger.name):
+        try:
+            article_extractor.extract_article(
+                "https://example.test/story?token=secret#comments"
+            )
+        except ArticleContentError:
+            pass
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "token=secret" not in messages
+    assert "https://example.test/story" in messages
 
 
 class FakeHttpClient:

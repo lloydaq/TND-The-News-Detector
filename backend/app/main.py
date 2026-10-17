@@ -2,10 +2,81 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.types import Receive, Scope, Send
 
 from app.routes.analysis import router as analysis_router
 
 app = FastAPI(title="TND Backend")
+MAX_REQUEST_BODY_BYTES = 512_000
+
+
+async def _send_body_limit_response(send: Send) -> None:
+    body = b'{"detail":"Request body is too large."}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+class RequestBodyLimitMiddleware:
+    """Reject oversized HTTP bodies, including chunked requests."""
+
+    def __init__(self, app, max_bytes: int = MAX_REQUEST_BODY_BYTES):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        content_length = next(
+            (
+                value
+                for name, value in scope.get("headers", [])
+                if name.lower() == b"content-length"
+            ),
+            None,
+        )
+        if content_length is not None:
+            try:
+                if int(content_length) > self.max_bytes:
+                    await _send_body_limit_response(send)
+                    return
+            except ValueError:
+                pass
+
+        total = 0
+        exhausted = False
+
+        async def limited_receive():
+            nonlocal total, exhausted
+            message = await receive()
+            if message.get("type") == "http.request" and not exhausted:
+                chunk = message.get("body", b"")
+                total += len(chunk)
+                if total > self.max_bytes:
+                    exhausted = True
+                    raise _RequestBodyTooLarge
+                if not message.get("more_body", False):
+                    exhausted = True
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except _RequestBodyTooLarge:
+            await _send_body_limit_response(send)
+
+
+class _RequestBodyTooLarge(Exception):
+    pass
 
 default_origins = [
     "http://localhost:5500",
@@ -28,6 +99,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 

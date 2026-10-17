@@ -1,4 +1,5 @@
 import logging
+import json
 import os
 import re
 import inspect
@@ -20,8 +21,60 @@ DEFAULT_LIMIT = 3
 MAX_LIMIT = 5
 REQUEST_TIMEOUT = 15.0
 GDELT_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
+MAX_PROVIDER_RESPONSE_BYTES = 512_000
 
 EvidenceItem = dict[str, Any]
+
+
+class _ProviderResponseTooLarge(ValueError):
+    """Raised when a provider response exceeds the bounded response budget."""
+
+
+def _decode_provider_response(response: Any) -> dict[str, Any]:
+    """Decode a bounded provider response, rejecting oversized payloads."""
+    content = getattr(response, "content", None)
+    if content is not None:
+        if len(content) > MAX_PROVIDER_RESPONSE_BYTES:
+            raise _ProviderResponseTooLarge
+        try:
+            data = json.loads(content)
+        except (TypeError, ValueError) as error:
+            raise ValueError from error
+    else:
+        # Test doubles and older transports may expose only json().
+        data = response.json()
+    if not isinstance(data, dict):
+        raise ValueError
+    return data
+
+
+def _request_provider_json(
+    client: Any,
+    url: str,
+    *,
+    params: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], int]:
+    """Fetch provider JSON with a streaming byte limit."""
+    if hasattr(client, "stream"):
+        with client.stream("GET", url, params=params, headers=headers) as response:
+            response.raise_for_status()
+            body = bytearray()
+            for chunk in response.iter_bytes():
+                body.extend(chunk)
+                if len(body) > MAX_PROVIDER_RESPONSE_BYTES:
+                    raise _ProviderResponseTooLarge
+            try:
+                data = json.loads(bytes(body))
+            except (TypeError, ValueError) as error:
+                raise ValueError from error
+            if not isinstance(data, dict):
+                raise ValueError
+            return data, response.status_code
+
+    response = client.get(url, params=params, headers=headers)
+    response.raise_for_status()
+    return _decode_provider_response(response), response.status_code
 
 
 def _search_provider(
@@ -260,25 +313,11 @@ def search_gnews(
 
     try:
         with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-            response = client.get(
+            data, _response_status = _request_provider_json(
+                client,
                 GNEWS_API_URL,
                 params=params,
             )
-            response.raise_for_status()
-
-        try:
-            data = response.json()
-        except ValueError:
-            if diagnostics is not None:
-                diagnostics["gnews"] = "invalid_response"
-            logger.warning("GNews returned invalid JSON.")
-            return []
-
-        if not isinstance(data, dict):
-            if diagnostics is not None:
-                diagnostics["gnews"] = "invalid_response"
-            logger.warning("GNews returned an unexpected response.")
-            return []
 
         if "articles" not in data:
             if diagnostics is not None:
@@ -331,6 +370,11 @@ def search_gnews(
             diagnostics["gnews"] = "results" if evidence else "no_results"
 
         return evidence
+
+    except (_ProviderResponseTooLarge, ValueError):
+        if diagnostics is not None:
+            diagnostics["gnews"] = "invalid_response"
+        logger.warning("GNews returned invalid or oversized JSON.")
 
     except httpx.HTTPStatusError as exc:
         # Do not log the full request URL because it contains the API key.
@@ -394,33 +438,16 @@ def search_gdelt(
     try:
         with httpx.Client(
             timeout=GDELT_TIMEOUT,
-            follow_redirects=True,
+            follow_redirects=False,
         ) as client:
-            response = client.get(
+            data, response_status = _request_provider_json(
+                client,
                 GDELT_API_URL,
                 params=params,
                 headers={
                     "User-Agent": "TND-NewsDetector/0.1"
                 },
             )
-            response.raise_for_status()
-
-        try:
-            data = response.json()
-        except ValueError:
-            if diagnostics is not None:
-                diagnostics["gdelt"] = "invalid_response"
-            logger.warning(
-                "GDELT returned a non-JSON response (HTTP %s).",
-                response.status_code,
-            )
-            return []
-
-        if not isinstance(data, dict):
-            if diagnostics is not None:
-                diagnostics["gdelt"] = "invalid_response"
-            logger.warning("GDELT returned an unexpected response.")
-            return []
 
         if "articles" not in data:
             if diagnostics is not None:
@@ -470,6 +497,14 @@ def search_gdelt(
             diagnostics["gdelt"] = "results" if evidence else "no_results"
 
         return evidence
+
+    except (_ProviderResponseTooLarge, ValueError):
+        if diagnostics is not None:
+            diagnostics["gdelt"] = "invalid_response"
+        logger.warning(
+            "GDELT returned invalid or oversized JSON (HTTP %s).",
+            response_status if "response_status" in locals() else "unknown",
+        )
 
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 429:

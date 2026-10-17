@@ -20,7 +20,7 @@ class AnalyzeRequest(BaseModel):
 
 class Signal(BaseModel):
     name: str
-    status: str
+    status: Literal["positive", "warning", "unknown"]
 
 
 
@@ -87,9 +87,13 @@ class AnalysisResponse(BaseModel):
     publisher: str
     author: str | None = None
     published_at: str | None = Field(default=None, alias="publishedAt")
-    risk_score: int = Field(alias="riskScore")
-    risk_label: str = Field(alias="riskLabel")
-    source_reliability: str = Field(alias="sourceReliability")
+    risk_score: int = Field(ge=0, le=100, alias="riskScore")
+    risk_label: Literal["Low Risk", "Needs Verification", "High Risk"] = Field(
+        alias="riskLabel"
+    )
+    source_reliability: Literal["Unknown", "Low", "Moderate", "High"] = Field(
+        alias="sourceReliability"
+    )
     signals: list[Signal]
     claims: list[Claim]
     analysis_status: Literal["COMPLETE", "DEGRADED"] = Field(
