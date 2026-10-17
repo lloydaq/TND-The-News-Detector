@@ -32,7 +32,8 @@ def calculate_risk_score(
     Combines:
     - Content signals (warning vs positive)
     - Source reliability (Unknown, Low, Moderate, High)
-    - Claim verification statuses (SUPPORTED, CONTRADICTED, MIXED_EVIDENCE, UNVERIFIED)
+    - Claim verification statuses (SUPPORTED, CONTRADICTED, INSUFFICIENT_EVIDENCE,
+      MIXED, UNVERIFIABLE)
 
     Constraints:
     - Unsupported claims are not automatically labelled false.
@@ -69,7 +70,7 @@ def calculate_risk_score(
     )
     mixed_count = sum(
         1 for claim in claims
-        if claim.get("verificationStatus") == "MIXED_EVIDENCE"
+        if claim.get("verificationStatus") in {"MIXED", "MIXED_EVIDENCE"}
     )
     supported_count = sum(
         1 for claim in claims
@@ -77,7 +78,11 @@ def calculate_risk_score(
     )
     unverified_count = sum(
         1 for claim in claims
-        if claim.get("verificationStatus") == "UNVERIFIED"
+        if claim.get("verificationStatus") in {
+            "INSUFFICIENT_EVIDENCE",
+            "UNVERIFIABLE",
+            "UNVERIFIED",
+        }
     )
 
     score += (contradicted_count * 25)

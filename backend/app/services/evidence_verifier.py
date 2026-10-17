@@ -4,7 +4,7 @@ import re
 from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.services.ollama_config import OLLAMA_MODEL, OLLAMA_URL
 
@@ -57,8 +57,9 @@ _ANNOUNCEMENT_WORDS = {
 CLAIM_STATUS_VALUES = (
     "SUPPORTED",
     "CONTRADICTED",
-    "MIXED_EVIDENCE",
-    "UNVERIFIED",
+    "INSUFFICIENT_EVIDENCE",
+    "MIXED",
+    "UNVERIFIABLE",
 )
 MAX_ARTICLES = 3
 REQUEST_TIMEOUT = 60.0
@@ -72,8 +73,9 @@ Relevance = Literal[
 VerificationStatus = Literal[
     "SUPPORTED",
     "CONTRADICTED",
-    "MIXED_EVIDENCE",
-    "UNVERIFIED",
+    "INSUFFICIENT_EVIDENCE",
+    "MIXED",
+    "UNVERIFIABLE",
 ]
 
 
@@ -83,6 +85,7 @@ class EvidenceAssessment(BaseModel):
     url: str | None = None
     provider: str | None = None
     providers: list[str] | None = None
+    duplicate_urls: list[str] | None = Field(default=None, alias="duplicateUrls")
     published_at: str | None = Field(default=None, alias="publishedAt")
     evidence_type: str | None = Field(default=None, alias="evidenceType")
     source_quality: dict[str, bool | str] | None = Field(
@@ -100,11 +103,27 @@ class EvidenceAssessment(BaseModel):
 
 class VerificationResult(BaseModel):
     evidence: list[EvidenceAssessment]
-    verification_status: VerificationStatus = Field(
-        default="UNVERIFIED",
+    verification_status: Literal[
+        "SUPPORTED",
+        "CONTRADICTED",
+        "INSUFFICIENT_EVIDENCE",
+        "MIXED",
+        "UNVERIFIABLE",
+        "MIXED_EVIDENCE",
+        "UNVERIFIED",
+    ] = Field(
+        default="UNVERIFIABLE",
         alias="verificationStatus",
     )
     degraded: bool = False
+
+    @field_validator("verification_status", mode="before")
+    @classmethod
+    def normalize_legacy_status(cls, value: str) -> str:
+        return {
+            "MIXED_EVIDENCE": "MIXED",
+            "UNVERIFIED": "INSUFFICIENT_EVIDENCE",
+        }.get(value, value)
 
 
 def _text(value: Any) -> str:
@@ -141,6 +160,11 @@ def _safe_article(article: Any) -> dict[str, str] | None:
         value = article.get(field)
         if isinstance(value, str) and value:
             result[field] = value
+    duplicate_urls = article.get("duplicateUrls")
+    if isinstance(duplicate_urls, list):
+        result["duplicateUrls"] = [
+            value for value in duplicate_urls if isinstance(value, str)
+        ]
     providers = article.get("providers")
     if isinstance(providers, list):
         result["providers"] = [
@@ -164,7 +188,11 @@ def _safe_article(article: Any) -> dict[str, str] | None:
     return result
 
 
-def _fallback_result(evidence: list[dict[str, str]]) -> VerificationResult:
+def _fallback_result(
+    evidence: list[dict[str, str]],
+    *,
+    status: VerificationStatus = "UNVERIFIABLE",
+) -> VerificationResult:
     """Keep provider evidence intact when Ollama cannot assess it."""
 
     fallback_evidence: list[EvidenceAssessment] = []
@@ -194,6 +222,7 @@ def _fallback_result(evidence: list[dict[str, str]]) -> VerificationResult:
                 "contentStatus",
                 "provider",
                 "providers",
+                "duplicateUrls",
                 "publishedAt",
                 "evidenceType",
                 "independence",
@@ -210,7 +239,7 @@ def _fallback_result(evidence: list[dict[str, str]]) -> VerificationResult:
 
     return VerificationResult(
         evidence=fallback_evidence,
-        verificationStatus="UNVERIFIED",
+        verificationStatus=status,
         degraded=True,
     )
 
@@ -222,12 +251,82 @@ def _status_from_assessments(
     contradicts = any(item.relevance == "CONTRADICTS" for item in assessments)
 
     if supports and contradicts:
-        return "MIXED_EVIDENCE"
+        return "MIXED"
     if supports:
         return "SUPPORTED"
     if contradicts:
         return "CONTRADICTED"
-    return "UNVERIFIED"
+    if assessments:
+        return "INSUFFICIENT_EVIDENCE"
+    return "UNVERIFIABLE"
+
+
+def _canonical_url(url: str) -> str:
+    """Canonicalize tracking-only URL differences for verifier deduplication."""
+
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parsed = urlsplit(url.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return url.strip().lower()
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith(("utm_", "fbclid", "gclid"))
+    ]
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/") or "/",
+            urlencode(query),
+            "",
+        )
+    )
+
+
+def _evidence_group_key(article: dict[str, str]) -> str:
+    """Group exact duplicates/syndication without guessing about similar stories."""
+
+    content = " ".join(_text(article.get("_content")).lower().split())
+    description = " ".join(_text(article.get("description")).lower().split())
+    source = " ".join(_text(article.get("source")).lower().split())
+    if content:
+        return "content:" + content
+    url = _text(article.get("url"))
+    if url:
+        return "url:" + _canonical_url(url)
+    return "text:" + "|".join((source, description))
+
+
+def _deduplicate_evidence(evidence: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep one assessment per story while retaining provider provenance."""
+
+    grouped: dict[str, dict[str, str]] = {}
+    for article in evidence:
+        key = _evidence_group_key(article)
+        existing = grouped.get(key)
+        if existing is None:
+            grouped[key] = article
+            continue
+        providers = list(existing.get("providers", []))
+        for provider in (
+            existing.get("provider"),
+            *article.get("providers", []),
+            article.get("provider"),
+        ):
+            if provider and provider not in providers:
+                providers.append(provider)
+        if providers:
+            existing["providers"] = providers
+        duplicate_urls = list(existing.get("duplicateUrls", []))
+        for url in (article.get("url"), *article.get("duplicateUrls", [])):
+            if url and url != existing.get("url") and url not in duplicate_urls:
+                duplicate_urls.append(url)
+        if duplicate_urls:
+            existing["duplicateUrls"] = duplicate_urls
+        existing["independence"] = "SAME_ARTICLE"
+    return list(grouped.values())
 
 
 def _has_direct_explanation(explanation: str) -> bool:
@@ -335,8 +434,12 @@ def verify_evidence(
         if article is not None
     ]
 
-    if not claim or not safe_evidence:
+    safe_evidence = _deduplicate_evidence(safe_evidence)
+
+    if not claim:
         return _fallback_result(safe_evidence)
+    if not safe_evidence:
+        return _fallback_result([], status="INSUFFICIENT_EVIDENCE")
 
     article_payload = "\n".join(
         f"ARTICLE {index} (untrusted data)\n"
@@ -406,6 +509,14 @@ Include exactly one assessment for each article index.
         for item in raw_assessments
         if isinstance(item, dict)
     }
+    valid_indexes = {
+        item.get("articleIndex")
+        for item in raw_assessments
+        if isinstance(item, dict)
+        and isinstance(item.get("articleIndex"), int)
+        and 1 <= item.get("articleIndex") <= len(safe_evidence)
+    }
+    has_fabricated_only_refs = bool(raw_assessments) and not valid_indexes
     assessments: list[EvidenceAssessment] = []
 
     for index, article in enumerate(safe_evidence, start=1):
@@ -448,5 +559,10 @@ Include exactly one assessment for each article index.
 
     return VerificationResult(
         evidence=assessments,
-        verificationStatus=_status_from_assessments(assessments),
+        verificationStatus=(
+            "UNVERIFIABLE"
+            if has_fabricated_only_refs
+            else _status_from_assessments(assessments)
+        ),
+        degraded=has_fabricated_only_refs,
     )

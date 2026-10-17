@@ -78,7 +78,7 @@ def test_analyzer_attaches_evidence_to_each_claim_and_preserves_status(
     assert len(response.claims) == 2
     assert all(claim.status == "Needs Verification" for claim in response.claims)
     assert response.claims[0].evidence[0].source == "Publisher"
-    assert response.claims[0].verification_status == "UNVERIFIED"
+    assert response.claims[0].verification_status == "INSUFFICIENT_EVIDENCE"
     assert response.model_dump(by_alias=True)["claims"][0]["evidence"][0][
         "url"
     ] == "https://example.test/evidence"
@@ -175,5 +175,5 @@ def test_analyzer_response_path_normalizes_public_evidence_explanation(
         "information does not establish or directly refute the specific "
         "claim."
     )
-    assert public_response["claims"][0]["verificationStatus"] == "UNVERIFIED"
+    assert public_response["claims"][0]["verificationStatus"] == "INSUFFICIENT_EVIDENCE"
     assert public_response["claims"][0]["status"] == "Needs Verification"

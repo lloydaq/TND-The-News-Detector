@@ -143,6 +143,25 @@ when both providers return one article, their provenance is retained and
 independence remains `UNKNOWN` rather than counting two confirmations.
 Article bodies are fetched only through the protected Phase 2 extractor.
 
+## Claim verification
+
+Each extracted claim is verified independently against the bounded evidence
+returned for that claim. Evidence is classified as `SUPPORTS`, `CONTRADICTS`,
+`RELATED_ONLY`, or `INSUFFICIENT_INFORMATION`; topical overlap, publisher
+reputation, and a missing article body cannot establish truth or falsity.
+
+Claim-level results use five statuses: `SUPPORTED`, `CONTRADICTED`, `MIXED`,
+`INSUFFICIENT_EVIDENCE`, and `UNVERIFIABLE`. `INSUFFICIENT_EVIDENCE` means
+available evidence was relevant but not decisive (including no retrieved
+evidence); `UNVERIFIABLE` means the verifier failed or returned unusable
+references. Legacy `UNVERIFIED` and `MIXED_EVIDENCE` values are accepted on
+input and normalized to the Phase 4 vocabulary.
+
+Duplicate URLs and exact syndicated article text are assessed once. Provider
+and duplicate-URL provenance remains attached, and duplicate copies are marked
+`SAME_ARTICLE` rather than counted as independent corroboration. Malformed or
+fabricated model references never create evidence or upgrade a claim.
+
 ## Current Limitations
 
 * Extraction cannot execute JavaScript, bypass paywalls, or recover content that
@@ -165,7 +184,7 @@ Article bodies are fetched only through the protected Phase 2 extractor.
 
 * [x] Develop a bounded evidence retrieval pipeline.
 * [x] Integrate GNews and GDELT as provenance-preserving evidence sources.
-* [x] Distinguish supported, contradicted, and unverified claims.
+* [x] Distinguish supported, contradicted, mixed, insufficient, and unverifiable claims.
 * [x] Improve error handling and article extraction.
 * [ ] Connect the frontend to live backend analysis.
 * [x] Add automated tests for API endpoints and article extraction.

@@ -30,6 +30,7 @@ class Evidence(BaseModel):
     url: str | None = None
     provider: str | None = None
     providers: list[str] | None = None
+    duplicate_urls: list[str] | None = Field(default=None, alias="duplicateUrls")
     published_at: str | None = Field(default=None, alias="publishedAt")
     evidence_type: Literal["HEADLINE_ONLY", "ARTICLE_TEXT"] | None = Field(
         default=None,
@@ -62,9 +63,20 @@ class Claim(BaseModel):
     verification_status: Literal[
         "SUPPORTED",
         "CONTRADICTED",
-        "MIXED_EVIDENCE",
-        "UNVERIFIED",
-    ] = Field(default="UNVERIFIED", alias="verificationStatus")
+        "INSUFFICIENT_EVIDENCE",
+        "MIXED",
+        "UNVERIFIABLE",
+    ] = Field(default="INSUFFICIENT_EVIDENCE", alias="verificationStatus")
+
+    @field_validator("verification_status", mode="before")
+    @classmethod
+    def normalize_legacy_verification_status(cls, value: str) -> str:
+        """Accept Phase 3 names while exposing the Phase 4 vocabulary."""
+
+        return {
+            "MIXED_EVIDENCE": "MIXED",
+            "UNVERIFIED": "INSUFFICIENT_EVIDENCE",
+        }.get(value, value)
 
 
 class AnalysisResponse(BaseModel):

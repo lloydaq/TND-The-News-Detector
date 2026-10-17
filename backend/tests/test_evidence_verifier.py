@@ -105,7 +105,7 @@ def test_related_only_evidence_does_not_verify_claim(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, EVIDENCE)
 
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
     assert result.evidence[0].relevance == "RELATED_ONLY"
 
 
@@ -114,7 +114,7 @@ def test_insufficient_information_does_not_verify_claim(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, EVIDENCE)
 
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
 
 
 def test_malformed_ollama_json_keeps_evidence_unassessed(monkeypatch):
@@ -124,7 +124,7 @@ def test_malformed_ollama_json_keeps_evidence_unassessed(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, EVIDENCE)
 
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "UNVERIFIABLE"
     assert result.evidence[0].model_dump(exclude_none=True) == EVIDENCE[0]
 
 
@@ -151,7 +151,7 @@ def test_malformed_explanation_is_normalized_through_complete_verification(
         "The article discusses a related topic, but the available "
         "information does not establish or directly refute the specific claim."
     )
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "UNVERIFIABLE"
 
 
 def test_related_only_fallback_sentence_is_exact(monkeypatch):
@@ -184,7 +184,7 @@ def test_ollama_timeout_keeps_evidence_unassessed(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, EVIDENCE)
 
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "UNVERIFIABLE"
     assert result.evidence[0].model_dump(exclude_none=True) == EVIDENCE[0]
     assert result.degraded is True
 
@@ -201,7 +201,7 @@ def test_empty_evidence_does_not_call_ollama(monkeypatch):
     result = evidence_verifier.verify_evidence(CLAIM, [])
 
     assert result.evidence == []
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
 
 
 def test_missing_article_fields_are_skipped(monkeypatch):
@@ -240,7 +240,7 @@ def test_invalid_model_classification_is_conservative(monkeypatch):
     result = evidence_verifier.verify_evidence(CLAIM, EVIDENCE)
 
     assert result.evidence[0].relevance == "INSUFFICIENT_INFORMATION"
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
 
 
 def test_headline_only_support_or_contradiction_is_downgraded(monkeypatch):
@@ -249,7 +249,7 @@ def test_headline_only_support_or_contradiction_is_downgraded(monkeypatch):
     result = evidence_verifier.verify_evidence(CLAIM, EVIDENCE)
 
     assert result.evidence[0].relevance == "RELATED_ONLY"
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
 
 
 def test_topical_support_explanation_is_downgraded(monkeypatch):
@@ -264,7 +264,7 @@ def test_topical_support_explanation_is_downgraded(monkeypatch):
     result = evidence_verifier.verify_evidence(CLAIM, FETCHED_EVIDENCE)
 
     assert result.evidence[0].relevance == "RELATED_ONLY"
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
     assert (
         result.evidence[0].explanation
         == (
@@ -339,7 +339,7 @@ def test_contradiction_without_specific_conflict_is_downgraded(monkeypatch):
     result = evidence_verifier.verify_evidence(CLAIM, FETCHED_EVIDENCE)
 
     assert result.evidence[0].relevance == "RELATED_ONLY"
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
     assert "does not establish" in result.evidence[0].explanation
 
 
@@ -364,7 +364,7 @@ def test_existing_mission_without_new_announcement_is_unverified(monkeypatch):
     result = evidence_verifier.verify_evidence(CLAIM, evidence)
 
     assert result.evidence[0].relevance == "RELATED_ONLY"
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
 
 
 def test_direct_support_can_produce_supported(monkeypatch):
@@ -412,7 +412,7 @@ def test_related_and_insufficient_evidence_stays_unverified(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, evidence)
 
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
 
 
 def test_fetched_article_text_reaches_ollama_prompt(monkeypatch):
@@ -434,7 +434,7 @@ def test_article_text_prompt_injection_is_not_an_instruction(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, injected)
 
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
     assert "never" in FakeOllamaClient.prompts[0].lower()
 
 
@@ -479,7 +479,7 @@ def test_multiple_articles_can_produce_mixed_evidence(monkeypatch):
 
     result = evidence_verifier.verify_evidence(CLAIM, evidence)
 
-    assert result.verification_status == "MIXED_EVIDENCE"
+    assert result.verification_status == "MIXED"
 
 
 @pytest.mark.parametrize(
@@ -519,7 +519,7 @@ def test_multiple_articles_can_produce_mixed_evidence(monkeypatch):
             "SUPPORTS",
             "The article discusses related ISRO quantum communication technology.",
             "RELATED_ONLY",
-            "UNVERIFIED",
+                "INSUFFICIENT_EVIDENCE",
             "does not establish",
         ),
         (
@@ -534,7 +534,7 @@ def test_multiple_articles_can_produce_mixed_evidence(monkeypatch):
             "SUPPORTS",
             "The article reports a different ISRO event, not the claimed announcement.",
             "RELATED_ONLY",
-            "UNVERIFIED",
+                "INSUFFICIENT_EVIDENCE",
             "does not establish",
         ),
         (
@@ -549,7 +549,7 @@ def test_multiple_articles_can_produce_mixed_evidence(monkeypatch):
             "SUPPORTS",
             "The article mentions an existing satellite mission.",
             "RELATED_ONLY",
-            "UNVERIFIED",
+                "INSUFFICIENT_EVIDENCE",
             "does not establish",
         ),
         (
@@ -558,7 +558,7 @@ def test_multiple_articles_can_produce_mixed_evidence(monkeypatch):
             "SUPPORTS",
             "The article directly states that ISRO announced a new satellite mission.",
             "RELATED_ONLY",
-            "UNVERIFIED",
+                "INSUFFICIENT_EVIDENCE",
             "does not establish",
         ),
     ],
@@ -601,13 +601,13 @@ def test_deterministic_claim_grounding_matrix(
         pytest.param(
             "{not json",
             "RELATED_ONLY",
-            "UNVERIFIED",
+            "UNVERIFIABLE",
             id="malformed-json",
         ),
         pytest.param(
             None,
             "RELATED_ONLY",
-            "UNVERIFIED",
+            "UNVERIFIABLE",
             id="provider-failure",
         ),
     ],
@@ -694,7 +694,7 @@ def test_parameterized_matrix_conflicting_direct_evidence(monkeypatch):
         "SUPPORTS",
         "CONTRADICTS",
     ]
-    assert result.verification_status == "MIXED_EVIDENCE"
+    assert result.verification_status == "MIXED"
     assert "directly" in result.evidence[0].explanation.lower()
     assert "directly" in result.evidence[1].explanation.lower()
 
@@ -713,7 +713,7 @@ def test_contradictory_explanation_and_classification_is_downgraded(monkeypatch)
 
     # Inconsistent output must be downgraded to conservative RELATED_ONLY
     assert result.evidence[0].relevance == "RELATED_ONLY"
-    assert result.verification_status == "UNVERIFIED"
+    assert result.verification_status == "INSUFFICIENT_EVIDENCE"
     assert "does not establish" in result.evidence[0].explanation
 
 
@@ -763,3 +763,52 @@ def test_claim_involving_dates_and_quantities(monkeypatch):
     result = evidence_verifier.verify_evidence(dated_claim, article)
     assert result.evidence[0].relevance == "SUPPORTS"
     assert result.verification_status == "SUPPORTED"
+
+
+def test_fabricated_model_references_are_unverifiable(monkeypatch):
+    _set_response(
+        monkeypatch,
+        {
+            "assessments": [
+                {
+                    "articleIndex": 99,
+                    "relevance": "SUPPORTS",
+                    "explanation": "The fabricated article proves the claim.",
+                }
+            ]
+        },
+    )
+
+    result = evidence_verifier.verify_evidence(CLAIM, FETCHED_EVIDENCE)
+
+    assert result.verification_status == "UNVERIFIABLE"
+    assert result.degraded is True
+    assert result.evidence[0].relevance == "INSUFFICIENT_INFORMATION"
+
+
+def test_duplicate_syndicated_content_is_assessed_once_and_provenance_is_kept(
+    monkeypatch,
+):
+    _set_response(
+        monkeypatch,
+        _assessment(
+            "SUPPORTS",
+            "The article directly states that ISRO announced a new satellite mission.",
+        ),
+    )
+    duplicate = {
+        "source": "Syndicated Publisher",
+        "description": "Different copy of the story",
+        "url": "https://syndicated.example/copy",
+        "provider": "gdelt",
+        "contentStatus": "FETCHED",
+        "_content": FETCHED_EVIDENCE[0]["_content"],
+    }
+    original = {**FETCHED_EVIDENCE[0], "provider": "gnews"}
+
+    result = evidence_verifier.verify_evidence(CLAIM, [original, duplicate])
+
+    assert len(result.evidence) == 1
+    assert result.verification_status == "SUPPORTED"
+    assert result.evidence[0].providers == ["gnews", "gdelt"]
+    assert result.evidence[0].independence == "SAME_ARTICLE"
