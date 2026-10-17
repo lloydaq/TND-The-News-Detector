@@ -177,3 +177,56 @@ def test_analyzer_response_path_normalizes_public_evidence_explanation(
     )
     assert public_response["claims"][0]["verificationStatus"] == "INSUFFICIENT_EVIDENCE"
     assert public_response["claims"][0]["status"] == "Needs Verification"
+    assert "Risk score:" in public_response["analysisExplanation"]
+    assert "unresolved" in public_response["analysisExplanation"]
+
+
+def test_analyzer_deduplicates_model_signals_and_explains_claim_outcomes(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        analyzer.httpx,
+        "Client",
+        type(
+            "Client",
+            (),
+            {
+                "__init__": lambda self, *args, **kwargs: None,
+                "__enter__": lambda self: self,
+                "__exit__": lambda self, *args: False,
+                "post": lambda self, url, json, **kwargs: httpx.Response(
+                    200,
+                    json={
+                        "response": json_lib.dumps(
+                            {
+                                "sourceReliability": "High",
+                                "signals": [
+                                    {"name": "Attribution", "status": "positive"},
+                                    {"name": " attribution ", "status": "positive"},
+                                ],
+                                "claims": [
+                                    {"id": 1, "text": "A checked claim."},
+                                ],
+                            }
+                        )
+                    },
+                    request=httpx.Request("POST", url),
+                ),
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        analyzer,
+        "search_evidence",
+        lambda claim_text, limit: [],
+    )
+
+    response = analyzer.analyze_content(
+        AnalyzeRequest(type="text", content="A report containing a checked claim.")
+    )
+
+    assert response.risk_score == 40
+    assert response.risk_label == "Needs Verification"
+    assert response.analysis_status == "COMPLETE"
+    assert "1 positive signal(s)" in response.analysis_explanation
+    assert "not proof of claim truth" in response.analysis_explanation

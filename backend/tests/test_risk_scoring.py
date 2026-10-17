@@ -122,3 +122,31 @@ def test_lack_of_evidence_not_automatically_misinformation():
     score, label = calculate_risk_score(signals, "Unknown", claims)
     assert score < 70
     assert label == "Needs Verification"
+
+
+def test_duplicate_signals_are_counted_once():
+    duplicate_signals = [
+        {"name": "Sensational Language", "status": "warning"},
+        {"name": " sensational   language ", "status": "warning"},
+    ]
+
+    score, label = calculate_risk_score(duplicate_signals, "Unknown", [])
+
+    assert score == 65
+    assert label == "Needs Verification"
+
+
+def test_legacy_and_invalid_claim_statuses_are_conservative():
+    legacy_score, legacy_label = calculate_risk_score(
+        [],
+        "Unknown",
+        [{"verificationStatus": "UNVERIFIED"}],
+    )
+    invalid_score, invalid_label = calculate_risk_score(
+        [],
+        "Unknown",
+        [{"verificationStatus": "not-a-status"}],
+    )
+
+    assert (legacy_score, legacy_label) == (50, "Needs Verification")
+    assert (invalid_score, invalid_label) == (50, "Needs Verification")

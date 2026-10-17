@@ -100,3 +100,7 @@ class AnalysisResponse(BaseModel):
         default_factory=list,
         alias="degradationReasons",
     )
+    analysis_explanation: str = Field(
+        default="Risk score is a heuristic warning indicator, not a probability of misinformation.",
+        alias="analysisExplanation",
+    )

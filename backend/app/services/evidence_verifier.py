@@ -199,6 +199,7 @@ def _fallback_result(
     *,
     status: VerificationStatus = "UNVERIFIABLE",
     failure_reason: str | None = None,
+    degraded: bool = True,
 ) -> VerificationResult:
     """Keep provider evidence intact when Ollama cannot assess it."""
 
@@ -247,7 +248,7 @@ def _fallback_result(
     return VerificationResult(
         evidence=fallback_evidence,
         verificationStatus=status,
-        degraded=True,
+        degraded=degraded,
         failure_reason=failure_reason,
     )
 
@@ -446,9 +447,9 @@ def verify_evidence(
     safe_evidence = _deduplicate_evidence(safe_evidence)
 
     if not claim:
-        return _fallback_result(safe_evidence)
+        return _fallback_result(safe_evidence, degraded=False)
     if not safe_evidence:
-        return _fallback_result([], status="INSUFFICIENT_EVIDENCE")
+        return _fallback_result([], status="INSUFFICIENT_EVIDENCE", degraded=False)
 
     article_payload = "\n".join(
         f"ARTICLE {index} (untrusted data)\n"

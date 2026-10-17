@@ -22,6 +22,81 @@ from app.services.ollama_config import (
 
 logger = logging.getLogger(__name__)
 
+_CANONICAL_VERIFICATION_STATUSES = {
+    "SUPPORTED",
+    "CONTRADICTED",
+    "INSUFFICIENT_EVIDENCE",
+    "MIXED",
+    "UNVERIFIABLE",
+}
+_LEGACY_VERIFICATION_STATUSES = {
+    "MIXED_EVIDENCE": "MIXED",
+    "UNVERIFIED": "INSUFFICIENT_EVIDENCE",
+}
+_SIGNAL_STATUS_PRIORITY = {"positive": 1, "unknown": 2, "warning": 3}
+
+
+def _canonical_verification_status(value: Any) -> str:
+    status = value if isinstance(value, str) else ""
+    status = _LEGACY_VERIFICATION_STATUSES.get(status, status)
+    return status if status in _CANONICAL_VERIFICATION_STATUSES else "UNVERIFIABLE"
+
+
+def _deduplicate_signals(signals: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Count one deterministic outcome per signal name."""
+
+    by_name: dict[str, dict[str, str]] = {}
+    for signal in signals:
+        name = signal.get("name")
+        status = signal.get("status")
+        if not isinstance(name, str) or not isinstance(status, str):
+            continue
+        clean_name = " ".join(name.split())[:100]
+        clean_status = status if status in _SIGNAL_STATUS_PRIORITY else "unknown"
+        key = clean_name.casefold()
+        existing = by_name.get(key)
+        if existing is None or _SIGNAL_STATUS_PRIORITY[clean_status] > _SIGNAL_STATUS_PRIORITY[existing["status"]]:
+            by_name[key] = {"name": clean_name, "status": clean_status}
+    return list(by_name.values())
+
+
+def _analysis_explanation(
+    score: int,
+    label: str,
+    signals: list[dict[str, Any]],
+    source_reliability: str,
+    claims: list[dict[str, Any]],
+    degraded: bool,
+) -> str:
+    warning_count = sum(signal.get("status") == "warning" for signal in signals)
+    positive_count = sum(signal.get("status") == "positive" for signal in signals)
+    statuses = [
+        _canonical_verification_status(claim.get("verificationStatus"))
+        for claim in claims
+    ]
+    parts = [
+        f"Risk score: {score}/100 ({label}).",
+        f"It uses {warning_count} warning signal(s) and {positive_count} positive signal(s); "
+        f"source reliability is {source_reliability} and is not proof of claim truth.",
+    ]
+    if "CONTRADICTED" in statuses:
+        parts.append("At least one claim has relevant contradictory evidence, which raises the warning score.")
+    if "SUPPORTED" in statuses:
+        parts.append("At least one claim has relevant supporting evidence, which lowers the warning score.")
+    unresolved = sum(
+        status in {"INSUFFICIENT_EVIDENCE", "UNVERIFIABLE", "MIXED"}
+        for status in statuses
+    )
+    if unresolved:
+        parts.append(
+            f"{unresolved} claim(s) remain unresolved or mixed; missing evidence is not treated as proof of falsity."
+        )
+    if not claims:
+        parts.append("No validated claims were available for claim-level verification.")
+    if degraded:
+        parts.append("The analysis was degraded, so the result should not be treated as a complete assessment.")
+    return " ".join(parts)
+
 
 def calculate_risk_score(
     signals: list[dict[str, Any]],
@@ -44,14 +119,9 @@ def calculate_risk_score(
     - Contradictory evidence transparently drives higher risk (score clamped >= 70).
     - Score ranges: < 30: "Low Risk", 30..69: "Needs Verification", >= 70: "High Risk".
     """
-    warning_count = sum(
-        1 for signal in signals
-        if signal.get("status") == "warning"
-    )
-    positive_count = sum(
-        1 for signal in signals
-        if signal.get("status") == "positive"
-    )
+    normalized_signals = _deduplicate_signals(signals)
+    warning_count = sum(signal["status"] == "warning" for signal in normalized_signals)
+    positive_count = sum(signal["status"] == "positive" for signal in normalized_signals)
 
     # Base heuristic from signals
     score = 50 + (warning_count * 15) - (positive_count * 10)
@@ -67,23 +137,20 @@ def calculate_risk_score(
     # Factor in claim verification results
     contradicted_count = sum(
         1 for claim in claims
-        if claim.get("verificationStatus") == "CONTRADICTED"
+        if _canonical_verification_status(claim.get("verificationStatus")) == "CONTRADICTED"
     )
     mixed_count = sum(
         1 for claim in claims
-        if claim.get("verificationStatus") in {"MIXED", "MIXED_EVIDENCE"}
+        if _canonical_verification_status(claim.get("verificationStatus")) == "MIXED"
     )
     supported_count = sum(
         1 for claim in claims
-        if claim.get("verificationStatus") == "SUPPORTED"
+        if _canonical_verification_status(claim.get("verificationStatus")) == "SUPPORTED"
     )
     unverified_count = sum(
         1 for claim in claims
-        if claim.get("verificationStatus") in {
-            "INSUFFICIENT_EVIDENCE",
-            "UNVERIFIABLE",
-            "UNVERIFIED",
-        }
+        if _canonical_verification_status(claim.get("verificationStatus"))
+        in {"INSUFFICIENT_EVIDENCE", "UNVERIFIABLE"}
     )
 
     score += (contradicted_count * 25)
@@ -238,23 +305,30 @@ Publisher: {publisher}
             raise OllamaFailure("invalid_output", "Ollama returned invalid signals.")
 
         clean_signals = []
+        malformed_signal_count = 0
 
         for signal in raw_signals[:10]:
             if not isinstance(signal, dict):
+                malformed_signal_count += 1
                 continue
 
             status = signal.get("status", "unknown")
             if status not in allowed_statuses:
+                malformed_signal_count += 1
                 status = "unknown"
 
+            name = signal.get("name", "Unspecified Signal")
+            if not isinstance(name, str) or not name.strip():
+                malformed_signal_count += 1
             clean_signals.append(
                 {
-                    "name": str(
-                        signal.get("name", "Unspecified Signal")
-                    )[:100],
+                    "name": str(name)[:100],
                     "status": status,
                 }
             )
+        clean_signals = _deduplicate_signals(clean_signals)
+        if malformed_signal_count:
+            degradation_reasons.add("Some model signal fields were invalid")
 
         raw_claims = result.get("claims", [])
         if not isinstance(raw_claims, list):
@@ -270,10 +344,12 @@ Publisher: {publisher}
                 degradation_reasons.add("Analysis deadline exhausted")
                 break
             if not isinstance(claim, dict):
+                degradation_reasons.add("Some model claim fields were invalid")
                 continue
 
             claim_text = claim.get("text", "")
             if not isinstance(claim_text, str) or not claim_text.strip():
+                degradation_reasons.add("Some model claims were incomplete")
                 continue
 
             if claim_text in search_cache:
@@ -343,7 +419,9 @@ Publisher: {publisher}
                         item.model_dump(exclude_none=True, by_alias=True)
                         for item in verification.evidence
                     ] or evidence_with_content,
-                    "verificationStatus": verification.verification_status,
+                    "verificationStatus": _canonical_verification_status(
+                        verification.verification_status
+                    ),
                 }
             )
 
@@ -366,6 +444,14 @@ Publisher: {publisher}
             claims=clean_claims,
             analysisStatus="DEGRADED" if degradation_reasons else "COMPLETE",
             degradationReasons=sorted(degradation_reasons),
+            analysisExplanation=_analysis_explanation(
+                score,
+                label,
+                clean_signals,
+                reliability,
+                clean_claims,
+                bool(degradation_reasons),
+            ),
         )
 
 
@@ -386,4 +472,12 @@ Publisher: {publisher}
             claims=[],
             analysisStatus="DEGRADED",
             degradationReasons=sorted(degradation_reasons),
+            analysisExplanation=_analysis_explanation(
+                score,
+                label,
+                [],
+                "Unknown",
+                [],
+                True,
+            ),
         )

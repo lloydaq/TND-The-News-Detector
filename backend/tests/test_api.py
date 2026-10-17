@@ -116,6 +116,7 @@ def test_analyze_text_valid_payload_and_response_schema(client, monkeypatch):
     assert len(data["claims"]) == 1
     assert data["claims"][0]["verificationStatus"] == "SUPPORTED"
     assert data["claims"][0]["evidence"][0]["relevance"] == "SUPPORTS"
+    assert isinstance(data["analysisExplanation"], str)
 
 
 def test_analyze_url_invalid_url_returns_400(client, monkeypatch):

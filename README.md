@@ -103,6 +103,10 @@ If evidence retrieval or Ollama verification is unavailable, the response
 uses `analysisStatus: "DEGRADED"` and includes safe `degradationReasons`
 instead of presenting the result as fully verified. Risk scores remain
 heuristics and are not probabilities or proof of truth.
+The response also includes `analysisExplanation`, which is generated from the
+validated signals, claim statuses, evidence limitations, and degradation state.
+Repeated signal names are counted once, and legacy claim status names are
+normalized to the Phase 4 vocabulary before scoring.
 Ollama uses one bounded request per inference stage; connection, timeout, HTTP,
 model-availability, empty-output, and malformed-JSON failures are classified
 internally and exposed only as sanitized degradation reasons. The
