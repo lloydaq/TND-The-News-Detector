@@ -103,6 +103,12 @@ If evidence retrieval or Ollama verification is unavailable, the response
 uses `analysisStatus: "DEGRADED"` and includes safe `degradationReasons`
 instead of presenting the result as fully verified. Risk scores remain
 heuristics and are not probabilities or proof of truth.
+Ollama uses one bounded request per inference stage; connection, timeout, HTTP,
+model-availability, empty-output, and malformed-JSON failures are classified
+internally and exposed only as sanitized degradation reasons. The
+`MAX_ANALYSIS_SECONDS` deadline caps both initial analysis and claim
+verification. No automatic retries are performed, so deterministic malformed
+output cannot create retry storms.
 
 For URL input, the backend validates the destination at connection time,
 follows only validated HTTP(S) redirects, streams HTML with a 2 MB response

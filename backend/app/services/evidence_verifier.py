@@ -6,7 +6,12 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel, Field, field_validator
 
-from app.services.ollama_config import OLLAMA_MODEL, OLLAMA_URL
+from app.services.ollama_client import OllamaFailure, public_reason, request_json
+from app.services.ollama_config import (
+    OLLAMA_MODEL,
+    OLLAMA_TIMEOUT_SECONDS,
+    OLLAMA_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +121,7 @@ class VerificationResult(BaseModel):
         alias="verificationStatus",
     )
     degraded: bool = False
+    failure_reason: str | None = None
 
     @field_validator("verification_status", mode="before")
     @classmethod
@@ -192,6 +198,7 @@ def _fallback_result(
     evidence: list[dict[str, str]],
     *,
     status: VerificationStatus = "UNVERIFIABLE",
+    failure_reason: str | None = None,
 ) -> VerificationResult:
     """Keep provider evidence intact when Ollama cannot assess it."""
 
@@ -241,6 +248,7 @@ def _fallback_result(
         evidence=fallback_evidence,
         verificationStatus=status,
         degraded=True,
+        failure_reason=failure_reason,
     )
 
 
@@ -424,6 +432,7 @@ def verify_evidence(
     claim: str,
     evidence: list[dict[str, Any]],
     max_articles: int = MAX_ARTICLES,
+    timeout_seconds: float | None = None,
 ) -> VerificationResult:
     """Assess retrieved headlines without claiming to have read full articles."""
 
@@ -490,19 +499,24 @@ Include exactly one assessment for each article index.
     }
 
     try:
-        with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-            response = client.post(OLLAMA_URL, json=payload)
-            response.raise_for_status()
-            response_data = response.json()
-        model_text = response_data.get("response")
-        parsed = json.loads(model_text) if isinstance(model_text, str) else {}
-    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
-        logger.warning("Evidence verification failed: %s", type(exc).__name__)
-        return _fallback_result(safe_evidence)
+        parsed = request_json(
+            httpx,
+            OLLAMA_URL,
+            payload,
+            min(OLLAMA_TIMEOUT_SECONDS, timeout_seconds)
+            if timeout_seconds is not None
+            else OLLAMA_TIMEOUT_SECONDS,
+        )
+    except OllamaFailure as exc:
+        logger.warning("Evidence verification failed: %s", exc.category)
+        return _fallback_result(safe_evidence, failure_reason=public_reason(exc))
 
     raw_assessments = parsed.get("assessments", [])
     if not isinstance(raw_assessments, list):
-        return _fallback_result(safe_evidence)
+        return _fallback_result(
+            safe_evidence,
+            failure_reason="Ollama returned invalid verification output",
+        )
 
     by_index = {
         item.get("articleIndex"): item
@@ -565,4 +579,9 @@ Include exactly one assessment for each article index.
             else _status_from_assessments(assessments)
         ),
         degraded=has_fabricated_only_refs,
+        failure_reason=(
+            "Ollama returned fabricated evidence references"
+            if has_fabricated_only_refs
+            else None
+        ),
     )

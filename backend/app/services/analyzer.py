@@ -12,6 +12,7 @@ from app.services.article_extractor import ExtractedArticle
 from app.services.evidence_retriever import search_evidence
 from app.services.evidence_content import retrieve_evidence_content
 from app.services.evidence_verifier import verify_evidence
+from app.services.ollama_client import OllamaFailure, public_reason, request_json
 from app.services.ollama_config import (
     MAX_ANALYSIS_SECONDS,
     OLLAMA_MODEL,
@@ -212,15 +213,21 @@ Publisher: {publisher}
     }
 
     try:
-        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
-            response = client.post(OLLAMA_URL, json=payload)
-            response.raise_for_status()
-            ollama_result = response.json()
-
-        result = json.loads(ollama_result["response"])
+        remaining = MAX_ANALYSIS_SECONDS - (time.monotonic() - started_at)
+        if remaining <= 0:
+            raise OllamaFailure("timeout", "Analysis deadline exhausted.")
+        result = request_json(
+            httpx,
+            OLLAMA_URL,
+            payload,
+            min(OLLAMA_TIMEOUT_SECONDS, remaining),
+        )
 
         allowed_reliability = {"Unknown", "Low", "Moderate", "High"}
         allowed_statuses = {"positive", "warning", "unknown"}
+
+        if not {"sourceReliability", "signals", "claims"} <= result.keys():
+            raise OllamaFailure("invalid_output", "Ollama omitted required analysis fields.")
 
         reliability = result.get("sourceReliability", "Unknown")
         if reliability not in allowed_reliability:
@@ -228,7 +235,7 @@ Publisher: {publisher}
 
         raw_signals = result.get("signals", [])
         if not isinstance(raw_signals, list):
-            raw_signals = []
+            raise OllamaFailure("invalid_output", "Ollama returned invalid signals.")
 
         clean_signals = []
 
@@ -251,7 +258,7 @@ Publisher: {publisher}
 
         raw_claims = result.get("claims", [])
         if not isinstance(raw_claims, list):
-            raw_claims = []
+            raise OllamaFailure("invalid_output", "Ollama returned invalid claims.")
 
         clean_claims = []
         content_cache: dict[str, dict[str, object]] = {}
@@ -260,7 +267,8 @@ Publisher: {publisher}
 
         for index, claim in enumerate(raw_claims[:5], start=1):
             if time.monotonic() - started_at > MAX_ANALYSIS_SECONDS:
-                raise RuntimeError("Analysis exceeded its configured time limit.")
+                degradation_reasons.add("Analysis deadline exhausted")
+                break
             if not isinstance(claim, dict):
                 continue
 
@@ -282,13 +290,32 @@ Publisher: {publisher}
                 cache=content_cache,
                 max_articles=3,
             )
+            remaining = MAX_ANALYSIS_SECONDS - (time.monotonic() - started_at)
+            if remaining <= 0:
+                degradation_reasons.add("Analysis deadline exhausted")
+                clean_claims.append(
+                    {
+                        "id": index,
+                        "text": claim_text[:1000],
+                        "status": "Needs Verification",
+                        "evidence": evidence_with_content,
+                        "verificationStatus": "UNVERIFIABLE",
+                    }
+                )
+                break
+            verification_kwargs: dict[str, Any] = {"max_articles": 3}
+            if "timeout_seconds" in inspect.signature(verify_evidence).parameters:
+                verification_kwargs["timeout_seconds"] = remaining
             verification = verify_evidence(
                 claim_text,
                 evidence_with_content,
-                max_articles=3,
+                **verification_kwargs,
             )
             if verification.degraded:
-                degradation_reasons.add("Evidence verification service unavailable")
+                degradation_reasons.add(
+                    verification.failure_reason
+                    or "Evidence verification service unavailable"
+                )
             provider_messages = {
                 "not_configured": "Evidence provider is not configured",
                 "rate_limited": "Evidence provider rate limit reached",
@@ -342,9 +369,21 @@ Publisher: {publisher}
         )
 
 
-    except (httpx.HTTPError, KeyError, ValueError, TypeError) as exc:
-        logger.exception("Local AI analysis failed: %s", exc)
-        raise RuntimeError(
-            "Local AI analysis failed. Check that Ollama is running "
-            "and the configured model is available."
-        ) from exc
+    except OllamaFailure as exc:
+        logger.warning("Local AI analysis failed: %s", exc.category)
+        score, label = calculate_risk_score([], "Unknown", [])
+        degradation_reasons.add(public_reason(exc))
+        return AnalysisResponse(
+            title=title,
+            source=source,
+            publisher=publisher,
+            author=author,
+            publishedAt=published_at,
+            riskScore=score,
+            riskLabel=label,
+            sourceReliability="Unknown",
+            signals=[],
+            claims=[],
+            analysisStatus="DEGRADED",
+            degradationReasons=sorted(degradation_reasons),
+        )
