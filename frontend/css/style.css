@@ -565,6 +565,31 @@ dialog p:not(.overline) {
   font-size: 14px;
   line-height: 1.55;
 }
+.degraded-notice {
+  margin-top: 23px;
+  padding: 20px 24px;
+  border: 1px solid #e6c38f;
+  border-left: 4px solid var(--amber);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--amber) 8%, var(--surface));
+  color: var(--ink);
+}
+.degraded-notice h2 {
+  margin: 0 0 7px;
+  color: var(--amber);
+  font-size: 18px;
+}
+.degraded-notice p,
+.degraded-notice ul {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.degraded-notice ul {
+  margin-top: 8px;
+  padding-left: 20px;
+}
 .result-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -608,6 +633,10 @@ dialog p:not(.overline) {
   border-radius: 4px;
   font-size: 12px;
   font-weight: 700;
+}
+.status.warning {
+  background: #fbeaea;
+  color: var(--red);
 }
 .moderate,
 .needs {

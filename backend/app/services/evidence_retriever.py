@@ -3,6 +3,9 @@ import json
 import os
 import re
 import inspect
+import hashlib
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -11,6 +14,7 @@ import httpx
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 load_dotenv()
 
@@ -22,6 +26,7 @@ MAX_LIMIT = 5
 REQUEST_TIMEOUT = 15.0
 GDELT_TIMEOUT = httpx.Timeout(connect=5.0, read=8.0, write=5.0, pool=5.0)
 MAX_PROVIDER_RESPONSE_BYTES = 512_000
+MAX_PROVIDER_CONCURRENCY = 2
 
 EvidenceItem = dict[str, Any]
 
@@ -125,6 +130,19 @@ _QUERY_FILLER_WORDS = {
     "claiming",
     "claims",
     "claimed",
+    "conducted",
+    "completed",
+    "crew",
+    "days",
+    "during",
+    "members",
+    "more",
+    "spent",
+    "than",
+    "theirs",
+    "their",
+    "around",
+    "how",
 }
 
 
@@ -207,10 +225,13 @@ def _broaden_query(query: str) -> str:
         token for token in tokens
         if token.lower() not in _QUERY_FILLER_WORDS
         or token.lower() in protected
-        or token[:1].isupper()
         or any(character.isdigit() for character in token)
+        or (
+            token[:1].isupper()
+            and token.lower() not in _QUERY_FILLER_WORDS
+        )
     ]
-    if len(meaningful) > 4:
+    if len(meaningful) > 6:
         entities = [
             token for token in meaningful
             if token[:1].isupper()
@@ -218,8 +239,8 @@ def _broaden_query(query: str) -> str:
             or token.lower() in protected
         ]
         remaining = [token for token in meaningful if token not in entities]
-        meaningful = entities + remaining[:max(0, 4 - len(entities))]
-    return " ".join(meaningful)[:200]
+        meaningful = entities + remaining[:max(0, 6 - len(entities))]
+    return " ".join(meaningful[:6])[:200]
 
 
 def _normalise_date(value: Any) -> str:
@@ -563,21 +584,58 @@ def search_evidence(
 
     provider_results: list[EvidenceItem] = []
     for query_index, query in enumerate(queries):
-        for provider_name, provider in (
+        providers = (
             ("gnews", search_gnews),
             ("gdelt", search_gdelt),
-        ):
+        )
+        query_diagnostics: dict[str, str] = {}
+
+        def run_provider(provider_name: str, provider: Any) -> tuple[str, list[EvidenceItem], dict[str, str], float]:
+            provider_diagnostics: dict[str, str] = {}
+            started_at = time.monotonic()
             try:
-                results = _search_provider(provider, query, limit, diagnostics)
+                results = _search_provider(
+                    provider,
+                    query,
+                    limit,
+                    provider_diagnostics,
+                )
             except (httpx.HTTPError, OSError, ValueError) as exc:
                 logger.warning(
                     "%s request failed while retrieving evidence: %s",
                     provider_name,
                     type(exc).__name__,
                 )
-                if diagnostics is not None:
-                    diagnostics[provider_name] = "error"
-                continue
+                provider_diagnostics[provider_name] = "error"
+                results = []
+            duration = time.monotonic() - started_at
+            logger.info(
+                "Evidence provider %s completed in %.3fs (attempts=1, status=%s, "
+                "query_length=%d, query_terms=%d, query_id=%s).",
+                provider_name,
+                duration,
+                provider_diagnostics.get(provider_name, "unknown"),
+                len(query),
+                len(query.split()),
+                hashlib.sha256(query.encode("utf-8")).hexdigest()[:12],
+            )
+            return provider_name, results, provider_diagnostics, duration
+
+        with ThreadPoolExecutor(
+            max_workers=MAX_PROVIDER_CONCURRENCY,
+            thread_name_prefix="evidence-provider",
+        ) as executor:
+            completed = list(
+                executor.map(
+                    lambda item: run_provider(*item),
+                    providers,
+                )
+            )
+
+        for provider_name, results, provider_diagnostics, _duration in completed:
+            query_diagnostics.update(provider_diagnostics)
+            if diagnostics is not None:
+                diagnostics.update(provider_diagnostics)
             for item in results:
                 if isinstance(item, dict):
                     item = dict(item)
@@ -594,6 +652,23 @@ def search_evidence(
                     item["originalClaim"] = original_claim
                     provider_results.append(item)
         if provider_results or query_index + 1 >= 2:
+            break
+        if any(
+            status
+            in {
+                "timeout",
+                "network_error",
+                "error",
+                "rate_limited",
+                "auth_error",
+                "quota_exhausted",
+                "not_configured",
+            }
+            for status in query_diagnostics.values()
+        ):
+            logger.info(
+                "Skipping broadened evidence query after provider failure."
+            )
             break
 
     evidence: list[EvidenceItem] = []

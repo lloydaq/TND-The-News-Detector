@@ -252,6 +252,12 @@ function createClaim(claim, index) {
   } else if (verStatus === "MIXED" || verStatus === "MIXED_EVIDENCE") {
     statusText = "Mixed Evidence";
     statusClass = "needs";
+  } else if (verStatus === "INSUFFICIENT_EVIDENCE" || verStatus === "UNVERIFIED") {
+    statusText = "Insufficient Evidence";
+    statusClass = "needs";
+  } else if (verStatus === "UNVERIFIABLE") {
+    statusText = "Unable to Verify";
+    statusClass = "needs";
   } else {
     statusText = "Needs Verification";
     statusClass = "needs";
@@ -261,20 +267,12 @@ function createClaim(claim, index) {
   status.textContent = statusText;
   content.append(number, quote, status);
 
-  const button = document.createElement("button");
-  button.className = "evidence-button";
-  button.type = "button";
-  button.setAttribute("aria-expanded", "false");
-  button.append("View Evidence ");
-  const symbol = document.createElement("span");
-  symbol.textContent = "+";
-  button.append(symbol);
-
   const evidence = document.createElement("div");
   evidence.className = "evidence";
-  evidence.hidden = true;
+  const hasEvidence = Array.isArray(claim.evidence) && claim.evidence.length > 0;
+  evidence.hidden = hasEvidence;
 
-  if (Array.isArray(claim.evidence) && claim.evidence.length > 0) {
+  if (hasEvidence) {
     claim.evidence.forEach((item) => {
       const itemEl = document.createElement("div");
       itemEl.className = "evidence-item";
@@ -296,14 +294,21 @@ function createClaim(claim, index) {
       }
 
       if (item.url) {
-        const link = document.createElement("a");
-        link.href = item.url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = "View source ↗";
-        link.style.fontSize = "0.85rem";
-        link.style.color = "var(--color-primary, #2563eb)";
-        itemEl.append(link);
+        try {
+          const sourceUrl = new URL(item.url);
+          if (sourceUrl.protocol === "http:" || sourceUrl.protocol === "https:") {
+            const link = document.createElement("a");
+            link.href = sourceUrl.href;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = "View source ↗";
+            link.style.fontSize = "0.85rem";
+            link.style.color = "var(--color-primary, #2563eb)";
+            itemEl.append(link);
+          }
+        } catch {
+          // Ignore malformed persisted evidence URLs.
+        }
       }
 
       if (item.explanation) {
@@ -321,19 +326,35 @@ function createClaim(claim, index) {
     const emptyP = document.createElement("p");
     emptyP.style.fontStyle = "italic";
     emptyP.style.opacity = "0.75";
-    emptyP.textContent = "No external evidence leads retrieved for this claim.";
+    emptyP.textContent =
+      verStatus === "INSUFFICIENT_EVIDENCE" || verStatus === "UNVERIFIED"
+        ? "No sufficient supporting evidence was retrieved, so this claim remains unverified."
+        : verStatus === "UNVERIFIABLE"
+          ? "This claim could not be verified because the verification service did not return a usable result."
+          : "No external evidence leads retrieved for this claim.";
     evidence.append(emptyP);
   }
 
-  button.addEventListener("click", () => {
-    const open = button.getAttribute("aria-expanded") === "true";
-    button.setAttribute("aria-expanded", String(!open));
-    button.firstChild.nodeValue = open ? "View Evidence " : "Hide Evidence ";
-    symbol.textContent = open ? "+" : "–";
-    evidence.hidden = open;
-  });
-
-  article.append(content, button, evidence);
+  if (hasEvidence) {
+    const button = document.createElement("button");
+    button.className = "evidence-button";
+    button.type = "button";
+    button.setAttribute("aria-expanded", "false");
+    button.append("View Evidence ");
+    const symbol = document.createElement("span");
+    symbol.textContent = "+";
+    button.append(symbol);
+    button.addEventListener("click", () => {
+      const open = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!open));
+      button.firstChild.nodeValue = open ? "View Evidence " : "Hide Evidence ";
+      symbol.textContent = open ? "+" : "–";
+      evidence.hidden = open;
+    });
+    article.append(content, button, evidence);
+  } else {
+    article.append(content, evidence);
+  }
   return article;
 }
 
@@ -341,23 +362,58 @@ function renderResults(result) {
   document.getElementById("riskScore").textContent = result.riskScore ?? "Not available";
   document.getElementById("resultInput").textContent = result.input || result.title || "Not available";
   document.getElementById("riskLabel").textContent = result.riskLabel || "Not available";
-  document.getElementById("assessmentNote").textContent =
-    result.assessmentNote || "This result is an AI-assisted assessment.";
   document.getElementById("sourceValue").textContent = result.source || "Not available";
   document.getElementById("publisherValue").textContent = result.publisher || "Not available";
   document.getElementById("reliabilityValue").textContent =
     result.sourceReliability || "Not available";
   const meter = document.getElementById("riskMeter");
-  meter.setAttribute("aria-label", `Misinformation risk: ${result.riskScore} percent`);
+  meter.setAttribute("aria-label", `Risk score: ${result.riskScore} out of 100`);
   meter.querySelector("span").style.width = `${result.riskScore}%`;
+  const explanation = result.analysisExplanation ||
+    "This result is an AI-assisted heuristic assessment, not a probability.";
+  const displayExplanation = explanation
+    .replace(
+      " The analysis was degraded, so the result should not be treated as a complete assessment.",
+      "",
+    )
+    .trim();
+  document.getElementById("assessmentNote").textContent = displayExplanation;
+
+  const degradedNotice = document.getElementById("degradedNotice");
+  const degradationReasons = document.getElementById("degradationReasons");
+  const isDegraded = result.analysisStatus === "DEGRADED";
+  degradedNotice.hidden = !isDegraded;
+  degradationReasons.replaceChildren();
+  if (isDegraded) {
+    const reasons = Array.isArray(result.degradationReasons) && result.degradationReasons.length
+      ? result.degradationReasons
+      : ["Some analysis services were unavailable."];
+    const friendlyReasons = [...new Set(reasons.map(friendlyDegradationReason))];
+    friendlyReasons.forEach((reason) => {
+      const item = document.createElement("li");
+      item.textContent = reason;
+      degradationReasons.append(item);
+    });
+  }
+
   const signalList = document.getElementById("signalList");
-  (Array.isArray(result.signals) ? result.signals : []).forEach((signal) => {
+  signalList.replaceChildren();
+  const signals = Array.isArray(result.signals) ? result.signals : [];
+  signals.forEach((signal) => {
     const item = document.createElement("li");
     item.className = signal.status || "";
     item.textContent = signal.name || "Not available";
     signalList.append(item);
   });
+  if (!signals.length) {
+    const emptySignals = document.createElement("li");
+    emptySignals.className = "unknown";
+    emptySignals.textContent =
+      "No content signals were returned by the analysis service.";
+    signalList.append(emptySignals);
+  }
   const claimsList = document.getElementById("claimsList");
+  claimsList.replaceChildren();
   if (Array.isArray(result.claims) && result.claims.length > 0) {
     result.claims.forEach((claim, index) =>
       claimsList.append(createClaim(claim, index)),
@@ -369,6 +425,25 @@ function renderResults(result) {
     noClaimsP.style.padding = "1rem 0";
     noClaimsP.textContent = "No verifiable factual claims were extracted from this content.";
     claimsList.append(noClaimsP);
+  }
+
+  function friendlyDegradationReason(reason) {
+    const text = typeof reason === "string" ? reason : "";
+    const upper = text.toUpperCase();
+    if (upper.includes("TIMEOUT")) return "Evidence or analysis service timed out.";
+    if (upper.includes("NOT_CONFIGURED")) return "An evidence provider is not configured.";
+    if (upper.includes("RATE_LIMIT")) return "An evidence provider rate limit was reached.";
+    if (upper.includes("AUTHENTICATION")) return "An evidence provider could not authenticate.";
+    if (upper.includes("QUOTA")) return "An evidence provider quota was exhausted.";
+    if (upper.includes("NO_RESULTS")) return "An evidence provider returned no results.";
+    if (upper.includes("NETWORK")) return "An evidence provider could not be reached.";
+    if (upper.includes("UNAVAILABLE")) return "A required analysis service was unavailable.";
+    if (upper.includes("MALFORMED") || upper.includes("INVALID")) {
+      return "An analysis service returned an unusable response.";
+    }
+    if (upper.includes("DEADLINE")) return "The analysis time limit was reached.";
+    if (upper.includes("EXTRACTION")) return "Article extraction was incomplete.";
+    return "Some analysis services were unavailable.";
   }
 }
 

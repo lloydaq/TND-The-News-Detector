@@ -9,6 +9,8 @@ from app.services.article_extractor import (
     ExtractedArticle,
     InvalidArticleURL,
 )
+from app.services.article_extractor import _SafeNetworkBackend
+from httpcore._backends.sync import SyncStream
 
 
 @pytest.fixture
@@ -201,3 +203,36 @@ def test_analyze_runtime_error_returns_503(client, monkeypatch):
     assert response.status_code == 503
     assert "Ollama" in response.json()["detail"]
     assert "Local AI" not in response.json()["detail"]
+
+
+def test_safe_network_backend_returns_httpcore_sync_stream(monkeypatch):
+    class FakeSocket:
+        def __init__(self, *_args):
+            self.connected_to = None
+
+        def settimeout(self, _timeout):
+            pass
+
+        def connect(self, address):
+            self.connected_to = address
+
+        def setsockopt(self, *_args):
+            pass
+
+        def close(self):
+            pass
+
+    fake_socket = FakeSocket()
+    monkeypatch.setattr(
+        "app.services.article_extractor._public_addresses",
+        lambda _host: ["93.184.216.34"],
+    )
+    monkeypatch.setattr(
+        "app.services.article_extractor.socket.socket",
+        lambda *_args: fake_socket,
+    )
+
+    stream = _SafeNetworkBackend().connect_tcp("example.test", 443, timeout=1)
+
+    assert isinstance(stream, SyncStream)
+    assert fake_socket.connected_to == ("93.184.216.34", 443)

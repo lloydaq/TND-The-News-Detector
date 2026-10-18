@@ -37,7 +37,7 @@
         <div>
           <p class="overline">Misinformation risk</p>
           <h2 id="risk-title">
-            <span id="riskScore"></span><small>%</small>
+            <span id="riskScore"></span><small>/ 100</small>
           </h2>
           <p id="riskLabel" class="risk-label"></p>
         </div>
@@ -45,6 +45,14 @@
           <span></span>
         </div>
         <p id="assessmentNote" class="assessment-note"></p>
+      </section>
+      <section id="degradedNotice" class="degraded-notice" aria-live="polite" hidden>
+        <h2>Analysis is incomplete</h2>
+        <p>
+          Some analysis services were unavailable. The score and claim results
+          should be treated as a cautious, incomplete assessment.
+        </p>
+        <ul id="degradationReasons"></ul>
       </section>
       <div class="result-grid">
         <section class="detail-section">

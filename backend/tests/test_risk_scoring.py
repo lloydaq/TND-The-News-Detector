@@ -124,6 +124,27 @@ def test_lack_of_evidence_not_automatically_misinformation():
     assert label == "Needs Verification"
 
 
+def test_unresolved_claims_keep_positive_signals_in_needs_verification_range():
+    signals = [
+        {"name": "Attribution", "status": "positive"},
+        {"name": "Language", "status": "positive"},
+        {"name": "Claims", "status": "positive"},
+    ]
+    claims = [
+        {
+            "id": index,
+            "verificationStatus": "INSUFFICIENT_EVIDENCE",
+        }
+        for index in range(1, 6)
+    ]
+
+    score, label = calculate_risk_score(signals, "High", claims)
+
+    # 50 - 30 (positive signals) - 10 (high reliability), then the
+    # unresolved-claim guardrail raises the result to 40.
+    assert (score, label) == (40, "Needs Verification")
+
+
 def test_duplicate_signals_are_counted_once():
     duplicate_signals = [
         {"name": "Sensational Language", "status": "warning"},

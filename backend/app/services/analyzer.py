@@ -289,6 +289,10 @@ Publisher: {publisher}
             payload,
             min(OLLAMA_TIMEOUT_SECONDS, remaining),
         )
+        logger.info(
+            "Initial Ollama inference completed in %.3fs.",
+            time.monotonic() - started_at,
+        )
 
         allowed_reliability = {"Unknown", "Low", "Moderate", "High"}
         allowed_statuses = {"positive", "warning", "unknown"}
@@ -355,12 +359,20 @@ Publisher: {publisher}
             if claim_text in search_cache:
                 evidence = search_cache[claim_text]
             else:
+                provider_started_at = time.monotonic()
                 search_kwargs: dict[str, Any] = {"limit": 3}
                 if "diagnostics" in inspect.signature(search_evidence).parameters:
                     search_kwargs["diagnostics"] = search_diagnostics
                 evidence = search_evidence(claim_text, **search_kwargs)
                 search_cache[claim_text] = evidence
+                logger.info(
+                    "Claim %d evidence retrieval completed in %.3fs (results=%d).",
+                    index,
+                    time.monotonic() - provider_started_at,
+                    len(evidence),
+                )
 
+            verification_started_at = time.monotonic()
             evidence_with_content = retrieve_evidence_content(
                 evidence,
                 cache=content_cache,
@@ -386,6 +398,12 @@ Publisher: {publisher}
                 claim_text,
                 evidence_with_content,
                 **verification_kwargs,
+            )
+            logger.info(
+                "Claim %d verification completed in %.3fs (status=%s).",
+                index,
+                time.monotonic() - verification_started_at,
+                verification.verification_status,
             )
             if verification.degraded:
                 degradation_reasons.add(
@@ -429,6 +447,12 @@ Publisher: {publisher}
             signals=clean_signals,
             source_reliability=reliability,
             claims=clean_claims,
+        )
+        logger.info(
+            "Analysis completed in %.3fs (claims=%d, degraded=%s).",
+            time.monotonic() - started_at,
+            len(clean_claims),
+            bool(degradation_reasons),
         )
 
         return AnalysisResponse(

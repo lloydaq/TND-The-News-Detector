@@ -342,6 +342,34 @@ def test_jsonld_article_body_and_metadata_are_extracted(monkeypatch):
     assert article.status == "SUCCESS"
 
 
+def test_unicode_article_title_is_preserved_during_extraction(monkeypatch):
+    body = " ".join(f"Sentence {index} contains useful reporting." for index in range(8))
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract",
+        lambda *args, **kwargs: body,
+    )
+    monkeypatch.setattr(
+        article_extractor.trafilatura,
+        "extract_metadata",
+        lambda *args, **kwargs: None,
+    )
+    html = f"""
+    <html>
+      <head><meta property="og:title" content="NASA’s reported mission" /></head>
+      <body><article>{body}</article></body>
+    </html>
+    """
+
+    article, _ = article_extractor._extract_from_html(
+        html,
+        urlparse("https://example.test/story"),
+    )
+
+    assert article is not None
+    assert article.title == "NASA’s reported mission"
+
+
 def test_duplicate_fallback_paragraphs_are_removed(monkeypatch):
     monkeypatch.setattr(article_extractor.trafilatura, "extract", lambda *args, **kwargs: "")
     monkeypatch.setattr(

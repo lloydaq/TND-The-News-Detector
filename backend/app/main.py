@@ -1,4 +1,5 @@
 import os
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,7 @@ from starlette.types import Receive, Scope, Send
 from app.routes.analysis import router as analysis_router
 
 app = FastAPI(title="TND Backend")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 MAX_REQUEST_BODY_BYTES = 512_000
 
 

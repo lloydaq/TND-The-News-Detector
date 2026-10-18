@@ -122,7 +122,9 @@ async function analyzeNews(input, inputType, externalSignal = null) {
         typeof claim.status !== "string" ||
         !Array.isArray(claim.evidence) ||
         !claimStatuses.has(
-          (claim.verificationStatus || claim.verification_status || "").toUpperCase(),
+          typeof (claim.verificationStatus || claim.verification_status) === "string"
+            ? (claim.verificationStatus || claim.verification_status).toUpperCase()
+            : "",
         ),
     )
   ) {

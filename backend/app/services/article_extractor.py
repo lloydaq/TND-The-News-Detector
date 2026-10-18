@@ -4,6 +4,7 @@ import ipaddress
 import json
 import logging
 import socket
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, Final, Literal
@@ -11,6 +12,7 @@ from urllib.parse import ParseResult, urljoin, urlparse
 
 import httpx
 import httpcore
+from httpcore._backends.sync import SyncStream
 import trafilatura
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, TemplateString
@@ -69,7 +71,7 @@ class _SafeNetworkBackend(httpcore.SyncBackend):
                     for option in socket_options:
                         sock.setsockopt(*option)
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                return httpcore.SyncStream(sock)
+                return SyncStream(sock)
             except OSError as error:
                 last_error = error
                 sock.close()
@@ -199,6 +201,7 @@ class ExtractedArticle:
 
 def extract_article(url: str) -> ExtractedArticle:
     """Fetch and extract an article using a robust multi-level fallback pipeline."""
+    started_at = time.monotonic()
     parsed_url = _validate_url(url)
     is_msn = _is_msn_domain(parsed_url.hostname)
 
@@ -208,6 +211,12 @@ def extract_article(url: str) -> ExtractedArticle:
 
     article, had_metadata = _extract_from_html(html, parsed_url)
     if article:
+        logger.info(
+            "Article extraction completed in %.3fs (status=%s, words=%d).",
+            time.monotonic() - started_at,
+            article.status,
+            article.word_count,
+        )
         return article
 
     # Fallback to crawler UA if initial browser UA yielded insufficient body
@@ -220,6 +229,12 @@ def extract_article(url: str) -> ExtractedArticle:
             fallback_html = _fetch_html(url, user_agent=CRAWLER_FALLBACK_USER_AGENT)
             article, had_metadata = _extract_from_html(fallback_html, parsed_url)
             if article:
+                logger.info(
+                    "Article extraction completed in %.3fs (status=%s, words=%d).",
+                    time.monotonic() - started_at,
+                    article.status,
+                    article.word_count,
+                )
                 return article
         except ArticleExtractionError as e:
             logger.debug("Fallback crawler fetch failed: %s", e)

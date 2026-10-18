@@ -1,4 +1,6 @@
 import threading
+import logging
+import time
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -14,6 +16,7 @@ from app.services.article_extractor import (
 
 router = APIRouter()
 _analysis_slots = threading.BoundedSemaphore(MAX_CONCURRENT_ANALYSES)
+logger = logging.getLogger(__name__)
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -31,6 +34,7 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
 
 
 def _analyze(request: AnalyzeRequest) -> AnalysisResponse:
+    started_at = time.monotonic()
     if request.type == "url":
         try:
             article = extract_article(request.content)
@@ -50,7 +54,13 @@ def _analyze(request: AnalyzeRequest) -> AnalysisResponse:
                 detail="No article content could be extracted.",
             ) from error
         try:
-            return analyze_content(request, article)
+            result = analyze_content(request, article)
+            logger.info(
+                "API analysis request completed in %.3fs (type=url, status=%s).",
+                time.monotonic() - started_at,
+                result.analysis_status,
+            )
+            return result
         except RuntimeError as error:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -58,7 +68,13 @@ def _analyze(request: AnalyzeRequest) -> AnalysisResponse:
             ) from error
 
     try:
-        return analyze_content(request)
+        result = analyze_content(request)
+        logger.info(
+            "API analysis request completed in %.3fs (type=text, status=%s).",
+            time.monotonic() - started_at,
+            result.analysis_status,
+        )
+        return result
     except RuntimeError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

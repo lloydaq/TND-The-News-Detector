@@ -1,4 +1,6 @@
 import httpx
+import threading
+import time
 
 from app.services import evidence_retriever
 
@@ -140,6 +142,63 @@ def test_provider_oversized_response_is_ignored(monkeypatch):
     monkeypatch.setenv("GNEWS_API_KEY", "test-key")
 
     assert evidence_retriever.search_gnews("ISRO mission") == []
+
+
+def test_providers_are_run_concurrently_within_a_bounded_pair(monkeypatch):
+    barrier = threading.Barrier(2)
+
+    def fake_gnews(*args):
+        barrier.wait(timeout=1)
+        return [
+            {
+                "source": "GNews",
+                "description": "A result",
+                "url": "https://example.test/gnews",
+            }
+        ]
+
+    def fake_gdelt(*args):
+        barrier.wait(timeout=1)
+        return [
+            {
+                "source": "GDELT",
+                "description": "Another result",
+                "url": "https://example.test/gdelt",
+            }
+        ]
+
+    monkeypatch.setattr(evidence_retriever, "search_gnews", fake_gnews)
+    monkeypatch.setattr(evidence_retriever, "search_gdelt", fake_gdelt)
+
+    started_at = time.monotonic()
+    result = evidence_retriever.search_evidence("A specific claim")
+
+    assert time.monotonic() - started_at < 1
+    assert {item["provider"] for item in result} == {"gnews", "gdelt"}
+
+
+def test_broadened_query_is_skipped_after_provider_failure(monkeypatch):
+    calls = []
+
+    def fake_gnews(query, limit, diagnostics=None):
+        calls.append(("gnews", query))
+        if diagnostics is not None:
+            diagnostics["gnews"] = "no_results"
+        return []
+
+    def fake_gdelt(query, limit, diagnostics=None):
+        calls.append(("gdelt", query))
+        if diagnostics is not None:
+            diagnostics["gdelt"] = "timeout"
+        return []
+
+    monkeypatch.setattr(evidence_retriever, "search_gnews", fake_gnews)
+    monkeypatch.setattr(evidence_retriever, "search_gdelt", fake_gdelt)
+
+    assert evidence_retriever.search_evidence(
+        "The minister approved 50 homes in Bristol",
+    ) == []
+    assert len(calls) == 2
 
 
 def test_no_provider_results_returns_empty_list(monkeypatch):
@@ -374,6 +433,25 @@ def test_query_generation_preserves_claim_qualifiers():
     assert "50" in queries[0]
     assert "Bristol" in queries[0]
     assert "2024" in queries[0]
+
+
+def test_query_broadening_removes_capitalized_filler_words():
+    queries = evidence_retriever.generate_search_queries(
+        "The crew members spent 237 days living and working in orbit"
+    )
+
+    assert queries[1] == "237 living working orbit"
+    assert "The" not in queries[1]
+
+
+def test_query_broadening_keeps_distinctive_terms_bounded():
+    queries = evidence_retriever.generate_search_queries(
+        "The crew conducted hundreds of hours of scientific research to support "
+        "human exploration beyond low Earth orbit"
+    )
+
+    assert queries[1] == "Earth hundreds hours scientific research support"
+    assert len(queries[1]) <= 200
 
 
 def test_query_generation_is_bounded_for_empty_and_long_claims():
