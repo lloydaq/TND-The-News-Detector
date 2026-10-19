@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-labelledby="title desc">
+  <title id="title">TND — The News Detector</title>
+  <desc id="desc">TND wordmark with the tagline "Understand the evidence. Question the claim." beside a diagram of one claim linked to evidence labelled supports, contradicts, related only, and insufficient.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1222"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.7" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#2F6FB5" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#2F6FB5" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#C9DCF5"/>
+    </linearGradient>
+    <linearGradient id="slash" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1D6FE0"/>
+      <stop offset="1" stop-color="#4C8ED0"/>
+    </linearGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#334155"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="300" rx="18" fill="url(#bg)"/>
+  <rect x="560" width="640" height="300" fill="url(#dots)" opacity="0.45"/>
+  <rect width="1200" height="300" rx="18" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="17.5" fill="none" stroke="#263449"/>
+
+  <!-- Wordmark: slanted like the app logo, with its blue slash bar. -->
+  <g transform="translate(78 0) skewX(-12)">
+    <polygon points="38,92 330,64 330,80 38,108" fill="url(#slash)"/>
+    <text x="30" y="196" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="118" font-weight="900" letter-spacing="2" fill="url(#word)">TND</text>
+  </g>
+  <text x="96" y="232" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="6" fill="#93C5FD">THE NEWS DETECTOR</text>
+  <text x="96" y="264" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" fill="#94A3B8">Understand the evidence. Question the claim.</text>
+
+  <!-- Claim/evidence motif. -->
+  <g transform="translate(850 152) scale(1.08)" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+    <circle r="104" fill="none" stroke="#4C8ED0" stroke-opacity="0.35" stroke-dasharray="3 9">
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="90s" repeatCount="indefinite"/>
+    </circle>
+    <g stroke="#4C8ED0" stroke-width="1.5" stroke-opacity="0.55" fill="none">
+      <line x1="0" y1="0" x2="-150" y2="-78"/>
+      <line x1="0" y1="0" x2="160" y2="-70"/>
+      <line x1="0" y1="0" x2="-140" y2="86"/>
+      <line x1="0" y1="0" x2="168" y2="82"/>
+      <line x1="0" y1="0" x2="20" y2="-112" stroke-opacity="0.3"/>
+      <line x1="-150" y1="-78" x2="20" y2="-112" stroke-opacity="0.2"/>
+      <line x1="160" y1="-70" x2="168" y2="82" stroke-opacity="0.2"/>
+    </g>
+    <line x1="0" y1="0" x2="160" y2="-70" stroke="#93C5FD" stroke-width="2" stroke-dasharray="14 160" stroke-linecap="round">
+      <animate attributeName="stroke-dashoffset" from="174" to="0" dur="4s" repeatCount="indefinite"/>
+    </line>
+
+    <g fill="#172033" stroke="#4C8ED0" stroke-width="1.5">
+      <circle cx="-150" cy="-78" r="7"/>
+      <circle cx="160" cy="-70" r="7"/>
+      <circle cx="-140" cy="86" r="7"/>
+      <circle cx="168" cy="82" r="7"/>
+      <circle cx="20" cy="-112" r="4" stroke-opacity="0.6"/>
+    </g>
+    <circle cx="-140" cy="86" r="12" fill="none" stroke="#93C5FD" stroke-width="1.2" opacity="0.5">
+      <animate attributeName="opacity" values="0.5;0.08;0.5" dur="5s" repeatCount="indefinite"/>
+    </circle>
+
+    <circle r="26" fill="#172033" stroke="#4C8ED0" stroke-width="2"/>
+    <circle r="9" fill="#4C8ED0"/>
+    <text y="48" text-anchor="middle" font-size="11" font-weight="700" letter-spacing="3" fill="#F8FAFC">CLAIM</text>
+
+    <g font-size="10.5" font-weight="700" letter-spacing="2" fill="#94A3B8">
+      <text x="-150" y="-96" text-anchor="middle">SUPPORTS</text>
+      <text x="160" y="-88" text-anchor="middle">CONTRADICTS</text>
+      <text x="-140" y="114" text-anchor="middle">RELATED ONLY</text>
+      <text x="168" y="110" text-anchor="middle">INSUFFICIENT</text>
+    </g>
+  </g>
+</svg>

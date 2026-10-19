@@ -5,3 +5,4 @@ httpx
 httpcore>=1.0,<2
 trafilatura
 beautifulsoup4
+python-dotenv

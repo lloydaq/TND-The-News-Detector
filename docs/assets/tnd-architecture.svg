@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" role="img" aria-labelledby="title desc">
+  <title id="title">TND analysis workflow</title>
+  <desc id="desc">The browser posts to the FastAPI backend. URL input goes through protected article extraction; text input skips it. Ollama extracts signals and up to five claims. Each claim, in turn, is searched in GNews and GDELT in parallel, evidence articles are fetched, and Ollama assesses the evidence. A deterministic heuristic produces the risk score, and the browser renders the JSON response on the results page.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4C8ED0"/>
+    </marker>
+    <style>
+      text { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; }
+      .box { fill: #172033; stroke: #334155; stroke-width: 1.5; }
+      .ext { fill: #0F172A; stroke: #4C8ED0; stroke-width: 1.2; stroke-dasharray: 5 4; }
+      .group { fill: #111a2c; stroke: #263449; stroke-width: 1.5; }
+      .flow { stroke: #4C8ED0; stroke-width: 2; fill: none; }
+      .t { fill: #F8FAFC; font-size: 17px; font-weight: 700; }
+      .s { fill: #94A3B8; font-size: 13.5px; }
+      .x { fill: #93C5FD; font-size: 12.5px; }
+      .n { fill: #0F172A; font-size: 13px; font-weight: 800; }
+      .lab { fill: #93C5FD; font-size: 12.5px; font-weight: 700; letter-spacing: 1px; }
+      .hd { fill: #93C5FD; font-size: 13px; font-weight: 700; letter-spacing: 2px; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="690" rx="18" fill="#0B1222"/>
+  <rect x="0.5" y="0.5" width="1199" height="689" rx="17.5" fill="none" stroke="#263449"/>
+
+  <!-- Row 1: request -->
+  <text x="40" y="44" class="hd">REQUEST</text>
+  <rect x="40" y="96" width="220" height="112" rx="12" class="box"/>
+  <circle cx="64" cy="122" r="12" fill="#4C8ED0"/><text x="64" y="127" text-anchor="middle" class="n">1</text>
+  <text x="84" y="128" class="t">Browser</text>
+  <text x="58" y="156" class="s">index.html · URL or text</text>
+  <text x="58" y="178" class="s">js/analysis.js</text>
+  <text x="58" y="198" class="x">POST /api/analyze</text>
+
+  <rect x="320" y="96" width="260" height="112" rx="12" class="box"/>
+  <circle cx="344" cy="122" r="12" fill="#4C8ED0"/><text x="344" y="127" text-anchor="middle" class="n">2</text>
+  <text x="364" y="128" class="t">FastAPI</text>
+  <text x="338" y="156" class="s">Body ≤ 512 KiB · CORS</text>
+  <text x="338" y="178" class="s">Schema check (≤ 100,000 chars)</text>
+  <text x="338" y="198" class="s">2 concurrent analyses</text>
+
+  <rect x="640" y="96" width="260" height="112" rx="12" class="box"/>
+  <circle cx="664" cy="122" r="12" fill="#4C8ED0"/><text x="664" y="127" text-anchor="middle" class="n">3</text>
+  <text x="684" y="128" class="t">Article extraction</text>
+  <text x="658" y="156" class="s">Public addresses only</text>
+  <text x="658" y="178" class="s">≤ 2 MB · ≤ 30 s · redirects rechecked</text>
+  <text x="658" y="198" class="x">↔ news website</text>
+
+  <rect x="960" y="96" width="200" height="112" rx="12" class="box"/>
+  <circle cx="984" cy="122" r="12" fill="#4C8ED0"/><text x="984" y="127" text-anchor="middle" class="n">4</text>
+  <text x="1004" y="128" class="t">Claim analysis</text>
+  <text x="978" y="156" class="s">Signals, reliability,</text>
+  <text x="978" y="178" class="s">up to 5 claims</text>
+  <text x="978" y="198" class="x">↔ Ollama</text>
+
+  <line x1="260" y1="152" x2="314" y2="152" class="flow" marker-end="url(#arrow)"/>
+  <line x1="580" y1="152" x2="634" y2="152" class="flow" marker-end="url(#arrow)"/>
+  <text x="607" y="142" text-anchor="middle" class="lab">URL</text>
+  <line x1="900" y1="152" x2="954" y2="152" class="flow" marker-end="url(#arrow)"/>
+  <!-- Text input skips extraction. -->
+  <path d="M450 96 V66 Q450 58 458 58 H1052 Q1060 58 1060 66 V90" class="flow" marker-end="url(#arrow)"/>
+  <text x="770" y="50" text-anchor="middle" class="lab">TEXT SKIPS EXTRACTION</text>
+
+  <!-- Row 2: per-claim evidence loop (right to left) -->
+  <line x1="1060" y1="208" x2="1060" y2="276" class="flow" marker-end="url(#arrow)"/>
+  <rect x="320" y="282" width="860" height="184" rx="14" class="group"/>
+  <text x="344" y="310" class="hd">5 · FOR EACH CLAIM, ONE AT A TIME · WITHIN THE 180 S ANALYSIS DEADLINE</text>
+
+  <rect x="904" y="326" width="252" height="120" rx="12" class="box"/>
+  <text x="922" y="352" class="t">Evidence search</text>
+  <rect x="922" y="364" width="104" height="34" rx="8" class="ext"/>
+  <text x="974" y="386" text-anchor="middle" class="x">GNews API</text>
+  <rect x="1036" y="364" width="104" height="34" rx="8" class="ext"/>
+  <text x="1088" y="386" text-anchor="middle" class="x">GDELT API</text>
+  <text x="922" y="430" class="s">In parallel · merged, de-duplicated</text>
+
+  <rect x="624" y="326" width="240" height="120" rx="12" class="box"/>
+  <text x="642" y="352" class="t">Evidence content</text>
+  <text x="642" y="380" class="s">Up to 3 articles per claim,</text>
+  <text x="642" y="400" class="s">same protected extractor</text>
+  <text x="642" y="430" class="x">↔ evidence websites</text>
+
+  <rect x="344" y="326" width="240" height="120" rx="12" class="box"/>
+  <text x="362" y="352" class="t">Verification</text>
+  <text x="362" y="380" class="s">Supports · Contradicts ·</text>
+  <text x="362" y="400" class="s">Related only · Insufficient</text>
+  <text x="362" y="430" class="x">↔ Ollama</text>
+
+  <line x1="904" y1="386" x2="870" y2="386" class="flow" marker-end="url(#arrow)"/>
+  <line x1="624" y1="386" x2="590" y2="386" class="flow" marker-end="url(#arrow)"/>
+
+  <!-- Row 3: response -->
+  <text x="40" y="530" class="hd">RESPONSE</text>
+  <line x1="464" y1="446" x2="464" y2="530" class="flow" marker-end="url(#arrow)"/>
+  <rect x="320" y="536" width="260" height="112" rx="12" class="box"/>
+  <circle cx="344" cy="562" r="12" fill="#4C8ED0"/><text x="344" y="567" text-anchor="middle" class="n">6</text>
+  <text x="364" y="568" class="t">Risk scoring</text>
+  <text x="338" y="596" class="s">Deterministic heuristic</text>
+  <text x="338" y="618" class="s">0–100 score, label, explanation</text>
+
+  <rect x="640" y="536" width="260" height="112" rx="12" class="box"/>
+  <circle cx="664" cy="562" r="12" fill="#4C8ED0"/><text x="664" y="567" text-anchor="middle" class="n">7</text>
+  <text x="684" y="568" class="t">JSON response</text>
+  <text x="658" y="596" class="s">COMPLETE or DEGRADED,</text>
+  <text x="658" y="618" class="s">with every failure reason</text>
+
+  <rect x="960" y="536" width="200" height="112" rx="12" class="box"/>
+  <circle cx="984" cy="562" r="12" fill="#4C8ED0"/><text x="984" y="567" text-anchor="middle" class="n">8</text>
+  <text x="1004" y="568" class="t">Results page</text>
+  <text x="978" y="596" class="s">results.html renders</text>
+  <text x="978" y="618" class="s">score, claims, evidence</text>
+
+  <line x1="580" y1="592" x2="634" y2="592" class="flow" marker-end="url(#arrow)"/>
+  <line x1="900" y1="592" x2="954" y2="592" class="flow" marker-end="url(#arrow)"/>
+
+  <!-- Legend -->
+  <g transform="translate(40 300)">
+    <text class="hd" y="10">KEY</text>
+    <rect y="30" width="34" height="22" rx="6" class="box"/>
+    <text x="46" y="46" class="s">TND code</text>
+    <rect y="66" width="34" height="22" rx="6" class="ext"/>
+    <text x="46" y="82" class="s">External service</text>
+    <text y="118" class="x">↔ calls out to</text>
+    <text y="150" class="s">Ollama runs locally;</text>
+    <text y="170" class="s">GNews needs an API key.</text>
+  </g>
+</svg>

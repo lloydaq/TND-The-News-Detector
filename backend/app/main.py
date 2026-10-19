@@ -1,8 +1,10 @@
 import os
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
 from app.routes.analysis import router as analysis_router
@@ -93,6 +95,9 @@ if env_origins:
         if clean_origin and clean_origin not in default_origins:
             default_origins.append(clean_origin)
 
+# The last middleware added is outermost. CORS wraps the body limit so a 413
+# still carries CORS headers and the browser can read the error.
+app.add_middleware(RequestBodyLimitMiddleware)
 # Allow the local frontend to communicate with the backend.
 app.add_middleware(
     CORSMiddleware,
@@ -101,7 +106,24 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
-app.add_middleware(RequestBodyLimitMiddleware)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(
+    request: Request, error: RequestValidationError
+) -> JSONResponse:
+    """Return a readable message without echoing the submitted content back."""
+    errors = error.errors()
+    error_types = {item.get("type") for item in errors}
+    if "string_too_long" in error_types:
+        detail = "Content must be at most 100,000 characters."
+    elif "json_invalid" in error_types:
+        detail = "The request body is not valid JSON."
+    elif any(item.get("loc", ())[-1:] == ("content",) for item in errors):
+        detail = "Content must not be empty."
+    else:
+        detail = "Invalid analysis request."
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 
 

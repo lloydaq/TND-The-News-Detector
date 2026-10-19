@@ -29,6 +29,16 @@ def analyze(request: AnalyzeRequest) -> AnalysisResponse:
 
     try:
         return _analyze(request)
+    except HTTPException:
+        raise
+    except Exception as error:
+        # Raised as an HTTPException so the response is JSON and passes through
+        # CORS; the default 500 handler sits outside the CORS middleware.
+        logger.exception("Unexpected analysis failure (%s).", type(error).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The analysis failed unexpectedly. Please try again.",
+        ) from error
     finally:
         _analysis_slots.release()
 

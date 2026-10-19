@@ -1,4 +1,3 @@
-const themeButtons = document.querySelectorAll("[data-theme-choice]");
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 let themePreference = localStorage.getItem("tnd-theme") || "system";
 
@@ -7,18 +6,20 @@ function applyTheme(preference) {
   const resolved = preference === "system" ? (systemTheme.matches ? "dark" : "light") : preference;
   document.documentElement.dataset.theme = resolved;
   document.documentElement.dataset.themePreference = preference;
-  themeButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === preference)));
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === preference)));
   document.querySelectorAll(".theme-logo").forEach((logo) => {
     logo.src = resolved === "dark" ? logo.dataset.logoDark : logo.dataset.logoLight;
   });
 }
 
 applyTheme(themePreference);
-themeButtons.forEach((button) => button.addEventListener("click", () => {
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-theme-choice]");
+  if (!button) return;
   const preference = button.dataset.themeChoice;
   localStorage.setItem("tnd-theme", preference);
   applyTheme(preference);
-}));
+});
 systemTheme.addEventListener("change", () => {
   if (themePreference === "system") applyTheme("system");
 });
@@ -142,6 +143,14 @@ if (document.getElementById("newsInput")) {
     updateAnalyzeState();
     field().focus();
   });
+  const MAX_CONTENT_LENGTH = 100000;
+  const loadingSteps = overlay.querySelectorAll(".loading-step");
+  let loadingStepTimers = [];
+  const resetLoadingSteps = () => {
+    loadingStepTimers.forEach(clearTimeout);
+    loadingStepTimers = [];
+    loadingSteps.forEach((step) => step.classList.remove("complete"));
+  };
   let currentAnalysisController = null;
   const cancelBtn = document.getElementById("cancelAnalyzeButton");
   if (cancelBtn) {
@@ -155,6 +164,9 @@ if (document.getElementById("newsInput")) {
   document
     .getElementById("analyzeButton")
     .addEventListener("click", async () => {
+      // Typing re-enables the button via updateAnalyzeState, so the disabled
+      // state alone cannot prevent a second request while one is in flight.
+      if (currentAnalysisController) return;
       const value = field().value.trim();
       if (!value) {
         message.textContent =
@@ -162,9 +174,16 @@ if (document.getElementById("newsInput")) {
         field().focus();
         return;
       }
+      if (value.length > MAX_CONTENT_LENGTH) {
+        message.textContent =
+          "This content is too long. Please submit at most 100,000 characters.";
+        field().focus();
+        return;
+      }
       if (inputType === "url") {
         try {
-          new URL(value);
+          const { protocol } = new URL(value);
+          if (protocol !== "http:" && protocol !== "https:") throw Error();
         } catch {
           message.textContent =
             "Enter a valid article URL, including https://.";
@@ -182,11 +201,12 @@ if (document.getElementById("newsInput")) {
       analyzeButton.disabled = true;
       overlay.classList.add("visible");
       overlay.setAttribute("aria-hidden", "false");
-      overlay
-        .querySelectorAll(".loading-step")
-        .forEach((step, i) =>
+      resetLoadingSteps();
+      loadingSteps.forEach((step, i) =>
+        loadingStepTimers.push(
           setTimeout(() => step.classList.add("complete"), i * 520),
-        );
+        ),
+      );
 
       currentAnalysisController = new AbortController();
 
@@ -198,6 +218,7 @@ if (document.getElementById("newsInput")) {
         );
         setTimeout(() => (location.href = "results.html"), 1500);
       } catch (error) {
+        resetLoadingSteps();
         overlay.classList.remove("visible");
         overlay.setAttribute("aria-hidden", "true");
         analyzeButton.disabled = false;
@@ -214,6 +235,8 @@ if (document.getElementById("newsInput")) {
           message.textContent = error.message || "The webpage did not contain enough extractable article content.";
         } else if (error.status === 502) {
           message.textContent = error.message || "Unable to fetch the external webpage.";
+        } else if (error.status === 413) {
+          message.textContent = error.message || "This content is too large to analyze.";
         } else if (error.status === 503) {
           message.textContent = error.message || "The local AI service (Ollama) is unavailable.";
         } else if (error instanceof TypeError || (error.name === "AbortError" && !error.isUserCancelled)) {
@@ -303,7 +326,7 @@ function createClaim(claim, index) {
             link.rel = "noopener noreferrer";
             link.textContent = "View source ↗";
             link.style.fontSize = "0.85rem";
-            link.style.color = "var(--color-primary, #2563eb)";
+            link.style.color = "var(--accent)";
             itemEl.append(link);
           }
         } catch {
@@ -358,19 +381,77 @@ function createClaim(claim, index) {
   return article;
 }
 
+// Maps backend degradationReasons (see analyzer.py and ollama_client.py) to
+// reader-facing text. Order matters: the specific cases come first.
+function friendlyDegradationReason(reason) {
+  const text = typeof reason === "string" ? reason.toLowerCase() : "";
+  const provider = text.startsWith("gnews:") ? "GNews" : text.startsWith("gdelt:") ? "GDELT" : "";
+  const evidenceSource = provider ? `The ${provider} evidence source` : "An evidence source";
+  if (text.includes("not configured")) return `${evidenceSource} is not configured.`;
+  if (text.includes("rate limit")) return `${evidenceSource} rate limit was reached.`;
+  if (text.includes("authentication")) return `${evidenceSource} could not authenticate.`;
+  if (text.includes("quota")) return `${evidenceSource} quota was exhausted.`;
+  if (text.includes("no results")) return `${evidenceSource} returned no results for at least one claim.`;
+  if (text.includes("characters of the content were analyzed")) {
+    return "The content was long, so only the first part was analyzed.";
+  }
+  if (text.includes("deadline")) return "The analysis time limit was reached before every claim was checked.";
+  if (text.includes("extraction")) return "Article extraction was incomplete.";
+  if (text.includes("fabricated")) return "The verifier referred to evidence that was not retrieved, so it was ignored.";
+  if (text.startsWith("ollama")) {
+    if (text.includes("timed out")) return "The local AI model (Ollama) timed out.";
+    if (text.includes("model is unavailable")) return "The configured AI model is not installed in Ollama.";
+    if (text.includes("connection failed")) return "The local AI service (Ollama) could not be reached.";
+    return "The local AI service (Ollama) returned an unusable response.";
+  }
+  if (provider && text.includes("timed out")) return `${evidenceSource} timed out.`;
+  if (provider && (text.includes("network") || text.includes("request failed"))) {
+    return `${evidenceSource} could not be reached.`;
+  }
+  if (provider && text.includes("malformed")) return `${evidenceSource} returned unusable data.`;
+  if (text.includes("invalid") || text.includes("incomplete")) {
+    return "Part of the AI output was unusable and was left out.";
+  }
+  if (text.includes("verification service unavailable")) return "Evidence verification was unavailable.";
+  return "Some analysis services were unavailable.";
+}
+
+function riskLevel(result) {
+  const signals = Array.isArray(result.signals) ? result.signals : [];
+  const claims = Array.isArray(result.claims) ? result.claims : [];
+  // A degraded result with no signals and no claims means the AI analysis never
+  // produced anything; the backend's baseline score is not an assessment.
+  if (result.analysisStatus === "DEGRADED" && !signals.length && !claims.length) {
+    return "unassessed";
+  }
+  return { "Low Risk": "low", "Needs Verification": "moderate", "High Risk": "high" }[
+    result.riskLabel
+  ] || "moderate";
+}
+
 function renderResults(result) {
-  document.getElementById("riskScore").textContent = result.riskScore ?? "Not available";
+  const level = riskLevel(result);
+  const assessed = level !== "unassessed";
+  document.querySelector(".risk-summary").dataset.level = level;
+  document.getElementById("riskScore").textContent = assessed ? result.riskScore ?? "Not available" : "—";
   document.getElementById("resultInput").textContent = result.input || result.title || "Not available";
-  document.getElementById("riskLabel").textContent = result.riskLabel || "Not available";
+  document.getElementById("riskLabel").textContent = assessed
+    ? result.riskLabel || "Not available"
+    : "Not assessed";
   document.getElementById("sourceValue").textContent = result.source || "Not available";
   document.getElementById("publisherValue").textContent = result.publisher || "Not available";
   document.getElementById("reliabilityValue").textContent =
     result.sourceReliability || "Not available";
   const meter = document.getElementById("riskMeter");
-  meter.setAttribute("aria-label", `Risk score: ${result.riskScore} out of 100`);
-  meter.querySelector("span").style.width = `${result.riskScore}%`;
-  const explanation = result.analysisExplanation ||
-    "This result is an AI-assisted heuristic assessment, not a probability.";
+  meter.setAttribute(
+    "aria-label",
+    assessed ? `Risk score: ${result.riskScore} out of 100` : "Risk score not assessed",
+  );
+  meter.querySelector("span").style.width = assessed ? `${result.riskScore}%` : "0%";
+  const explanation = !assessed
+    ? "The AI analysis produced no signals or claims, so no risk score was calculated. See the reasons below."
+    : result.analysisExplanation ||
+      "This result is an AI-assisted heuristic assessment, not a probability.";
   const displayExplanation = explanation
     .replace(
       " The analysis was degraded, so the result should not be treated as a complete assessment.",
@@ -425,25 +506,6 @@ function renderResults(result) {
     noClaimsP.style.padding = "1rem 0";
     noClaimsP.textContent = "No verifiable factual claims were extracted from this content.";
     claimsList.append(noClaimsP);
-  }
-
-  function friendlyDegradationReason(reason) {
-    const text = typeof reason === "string" ? reason : "";
-    const upper = text.toUpperCase();
-    if (upper.includes("TIMEOUT")) return "Evidence or analysis service timed out.";
-    if (upper.includes("NOT_CONFIGURED")) return "An evidence provider is not configured.";
-    if (upper.includes("RATE_LIMIT")) return "An evidence provider rate limit was reached.";
-    if (upper.includes("AUTHENTICATION")) return "An evidence provider could not authenticate.";
-    if (upper.includes("QUOTA")) return "An evidence provider quota was exhausted.";
-    if (upper.includes("NO_RESULTS")) return "An evidence provider returned no results.";
-    if (upper.includes("NETWORK")) return "An evidence provider could not be reached.";
-    if (upper.includes("UNAVAILABLE")) return "A required analysis service was unavailable.";
-    if (upper.includes("MALFORMED") || upper.includes("INVALID")) {
-      return "An analysis service returned an unusable response.";
-    }
-    if (upper.includes("DEADLINE")) return "The analysis time limit was reached.";
-    if (upper.includes("EXTRACTION")) return "Article extraction was incomplete.";
-    return "Some analysis services were unavailable.";
   }
 }
 

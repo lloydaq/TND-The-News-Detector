@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Any, Literal
 
 from app.services.article_extractor import (
@@ -27,8 +28,13 @@ def retrieve_evidence_content(
     evidence: list[dict[str, Any]],
     cache: dict[str, dict[str, Any]] | None = None,
     max_articles: int = MAX_ARTICLES,
+    deadline: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Attach extracted article text for internal verification only."""
+    """Attach extracted article text for internal verification only.
+
+    ``deadline`` is a ``time.monotonic()`` value; once it passes, remaining
+    articles are reported as unavailable instead of being fetched.
+    """
 
     cache = cache if cache is not None else {}
     enriched: list[dict[str, Any]] = []
@@ -49,6 +55,12 @@ def retrieve_evidence_content(
 
         if url in cache:
             result.update(cache[url])
+            enriched.append(result)
+            continue
+
+        if deadline is not None and time.monotonic() >= deadline:
+            # Not cached: a later request with time remaining may still fetch it.
+            result["contentStatus"] = "UNAVAILABLE"
             enriched.append(result)
             continue
 

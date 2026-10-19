@@ -1,0 +1,25 @@
+{
+  "name": "tnd",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TND (The News Detector) is a web-based project designed to explore AI-assisted news analysis and misinformation detection.",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:live": "node tests/live/run-live.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lloydaq/TND-The-News-Detector.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lloydaq/TND-The-News-Detector/issues"
+  },
+  "homepage": "https://github.com/lloydaq/TND-The-News-Detector#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}

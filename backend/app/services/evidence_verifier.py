@@ -519,18 +519,15 @@ Include exactly one assessment for each article index.
             failure_reason="Ollama returned invalid verification output",
         )
 
+    # articleIndex is untrusted model output; only real integers can key the map.
     by_index = {
-        item.get("articleIndex"): item
-        for item in raw_assessments
-        if isinstance(item, dict)
-    }
-    valid_indexes = {
-        item.get("articleIndex")
+        item["articleIndex"]: item
         for item in raw_assessments
         if isinstance(item, dict)
         and isinstance(item.get("articleIndex"), int)
-        and 1 <= item.get("articleIndex") <= len(safe_evidence)
+        and not isinstance(item.get("articleIndex"), bool)
     }
+    valid_indexes = {index for index in by_index if 1 <= index <= len(safe_evidence)}
     has_fabricated_only_refs = bool(raw_assessments) and not valid_indexes
     assessments: list[EvidenceAssessment] = []
 

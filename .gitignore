@@ -39,3 +39,14 @@ Thumbs.db
 node_modules/
 dist/
 build/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Local tooling output and state (not part of the project)
+graphify-out/
+.impeccable/

@@ -57,11 +57,8 @@ async function analyzeNews(input, inputType, externalSignal = null) {
     let errorDetail = "";
     try {
       const errData = await response.json();
-      if (errData && errData.detail) {
-        errorDetail =
-          typeof errData.detail === "string"
-            ? errData.detail
-            : JSON.stringify(errData.detail);
+      if (errData && typeof errData.detail === "string") {
+        errorDetail = errData.detail;
       }
     } catch { }
     const err = new Error(

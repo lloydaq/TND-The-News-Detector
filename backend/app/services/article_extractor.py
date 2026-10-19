@@ -36,6 +36,9 @@ CRAWLER_FALLBACK_USER_AGENT: Final[str] = (
 )
 USER_AGENT: Final[str] = DEFAULT_BROWSER_USER_AGENT
 REQUEST_TIMEOUT: Final[float] = 12.0
+# Per-read timeouts alone let a server drip bytes indefinitely; this caps the
+# whole fetch, including redirects and the body download.
+MAX_FETCH_SECONDS: Final[float] = 30.0
 MAX_REDIRECTS: Final[int] = 5
 MIN_ARTICLE_TEXT_LENGTH: Final[int] = 200
 MIN_ARTICLE_WORDS: Final[int] = 35
@@ -93,20 +96,26 @@ def _public_addresses(hostname: str) -> list[str]:
     except socket.gaierror as error:
         raise ArticleFetchError("Unable to fetch the external webpage.") from error
 
-    public: list[str] = []
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            continue
-        public.append(address)
-    return public
+    return [address for address in addresses if _is_public_ip(ipaddress.ip_address(address))]
+
+
+_NAT64_WELL_KNOWN_PREFIX: Final = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Allow only globally routable unicast addresses.
+
+    ``is_global`` also rejects shared address space such as 100.64.0.0/10,
+    which ``is_private`` does not. IPv6 forms that embed an IPv4 address are
+    judged by the embedded address.
+    """
+    if ip.version == 6:
+        embedded = ip.ipv4_mapped
+        if embedded is None and ip in _NAT64_WELL_KNOWN_PREFIX:
+            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        if embedded is not None:
+            return _is_public_ip(embedded)
+    return ip.is_global and not ip.is_multicast
 
 ARTICLE_IGNORE_SELECTORS: Final[list[str]] = [
     "nav",
@@ -416,6 +425,7 @@ def _is_msn_domain(hostname: str | None) -> bool:
 def _fetch_html(url: str, user_agent: str | None = None) -> str:
     current_url = url
     ua = user_agent or DEFAULT_BROWSER_USER_AGENT
+    deadline = time.monotonic() + MAX_FETCH_SECONDS
     try:
         transport = httpx.HTTPTransport(trust_env=False)
         # HTTPTransport does not expose its httpcore backend publicly. Replacing
@@ -435,6 +445,7 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
             },
         ) as client:
             for _ in range(MAX_REDIRECTS + 1):
+                _check_fetch_deadline(deadline)
                 response_context = (
                     client.stream("GET", current_url)
                     if hasattr(client, "stream")
@@ -473,6 +484,7 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
                         else (response.content,)
                     )
                     for chunk in chunks:
+                        _check_fetch_deadline(deadline)
                         body.extend(chunk)
                         if len(body) > MAX_HTML_BYTES:
                             raise ArticleContentError(
@@ -494,6 +506,13 @@ def _fetch_html(url: str, user_agent: str | None = None) -> str:
         raise ArticleFetchError("Unable to fetch the external webpage.") from error
 
     raise ArticleFetchError("Unable to fetch the external webpage.")
+
+
+def _check_fetch_deadline(deadline: float) -> None:
+    if time.monotonic() > deadline:
+        timeout_error = ArticleFetchError("Unable to fetch the external webpage.")
+        timeout_error.failure_status = "TIMEOUT"
+        raise timeout_error
 
 
 def _find_ld_objects(soup: BeautifulSoup) -> list[dict[str, Any]]:

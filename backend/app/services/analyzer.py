@@ -34,6 +34,7 @@ _LEGACY_VERIFICATION_STATUSES = {
     "UNVERIFIED": "INSUFFICIENT_EVIDENCE",
 }
 _SIGNAL_STATUS_PRIORITY = {"positive": 1, "unknown": 2, "warning": 3}
+MAX_PROMPT_CONTENT_CHARS = 12_000
 
 
 def _canonical_verification_status(value: Any) -> str:
@@ -213,6 +214,10 @@ def analyze_content(
         degradation_reasons.update(
             f"Extraction warning: {warning}" for warning in article.warnings
         )
+    if len(content) > MAX_PROMPT_CONTENT_CHARS:
+        degradation_reasons.add(
+            f"Only the first {MAX_PROMPT_CONTENT_CHARS:,} characters of the content were analyzed"
+        )
 
     prompt = f"""
 You help users critically evaluate news articles.
@@ -267,7 +272,7 @@ Publisher: {publisher}
 </article_metadata>
 
 <article_data>
-{content[:12000]}
+{content[:MAX_PROMPT_CONTENT_CHARS]}
 </article_data>
 """
 
@@ -301,7 +306,10 @@ Publisher: {publisher}
             raise OllamaFailure("invalid_output", "Ollama omitted required analysis fields.")
 
         reliability = result.get("sourceReliability", "Unknown")
-        if reliability not in allowed_reliability:
+        if not isinstance(reliability, str) or reliability not in allowed_reliability:
+            reliability = "Unknown"
+        if article is None:
+            # Pasted text has no source to rate; any model rating would be invented.
             reliability = "Unknown"
 
         raw_signals = result.get("signals", [])
@@ -317,16 +325,17 @@ Publisher: {publisher}
                 continue
 
             status = signal.get("status", "unknown")
-            if status not in allowed_statuses:
+            if not isinstance(status, str) or status not in allowed_statuses:
                 malformed_signal_count += 1
                 status = "unknown"
 
             name = signal.get("name", "Unspecified Signal")
             if not isinstance(name, str) or not name.strip():
                 malformed_signal_count += 1
+                name = "Unspecified Signal"
             clean_signals.append(
                 {
-                    "name": str(name)[:100],
+                    "name": name[:100],
                     "status": status,
                 }
             )
@@ -373,11 +382,10 @@ Publisher: {publisher}
                 )
 
             verification_started_at = time.monotonic()
-            evidence_with_content = retrieve_evidence_content(
-                evidence,
-                cache=content_cache,
-                max_articles=3,
-            )
+            content_kwargs: dict[str, Any] = {"cache": content_cache, "max_articles": 3}
+            if "deadline" in inspect.signature(retrieve_evidence_content).parameters:
+                content_kwargs["deadline"] = started_at + MAX_ANALYSIS_SECONDS
+            evidence_with_content = retrieve_evidence_content(evidence, **content_kwargs)
             remaining = MAX_ANALYSIS_SECONDS - (time.monotonic() - started_at)
             if remaining <= 0:
                 degradation_reasons.add("Analysis deadline exhausted")
