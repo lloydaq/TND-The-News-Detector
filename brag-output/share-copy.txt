@@ -1,0 +1,3 @@
+I built a news detector that won't tell you what's true — on purpose. TND pulls the checkable claims out of an article, checks each one against the coverage it actually finds on GNews and GDELT, and shows you an explainable score, the evidence, and what it couldn't check. Insufficient evidence is never called false.
+
+github.com/lloydaq/TND-The-News-Detector

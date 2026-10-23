@@ -50,3 +50,10 @@ build/
 # Local tooling output and state (not part of the project)
 graphify-out/
 .impeccable/
+
+# /brag render intermediates
+brag-output*/work/frames/
+brag-output*/work/stills/
+brag-output*/work/*.png
+brag-output*/work/*.wav
+brag-output*/work/*.log

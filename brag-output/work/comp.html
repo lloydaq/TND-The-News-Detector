@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>TND brag</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root { --bg:#0f172a; --surface:#172033; --line:#334155; --muted:#94a3b8; --text:#f8fafc; --accent:#4c8ed0; --amber:#c9781f; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; width:1920px; height:1080px; overflow:hidden; background:var(--bg); }
+  body { font-family:"DM Sans",sans-serif; color:var(--text); }
+  #bg { position:absolute; inset:0;
+    background:
+      radial-gradient(1100px 700px at 50% 38%, rgba(45,97,152,.30), transparent 70%),
+      radial-gradient(900px 600px at 85% 110%, rgba(76,142,208,.14), transparent 70%),
+      var(--bg); }
+  .layer { position:absolute; inset:0; }
+  /* Hook */
+  #hook { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+  #hook .l1 { font:800 112px/1.08 Manrope,sans-serif; letter-spacing:-.04em; max-width:1500px; }
+  #hook .l2 { margin-top:34px; font:800 112px/1 Manrope,sans-serif; letter-spacing:-.04em; color:var(--accent); }
+  .w { display:inline-block; will-change:transform,opacity; }
+  /* Logo */
+  .logo { position:absolute; left:50%; -webkit-mask-image:radial-gradient(closest-side, #000 62%, transparent 100%); mask-image:radial-gradient(closest-side, #000 62%, transparent 100%); }
+  #reveal .logo { width:1020px; top:110px; margin-left:-510px; }
+  #reveal .tag { position:absolute; left:0; right:0; top:790px; text-align:center; font:800 76px Manrope,sans-serif; letter-spacing:-.035em; }
+  /* Stage (browser window holding the real app) */
+  #stageWrap { position:absolute; inset:0; overflow:hidden; }
+  #stage { position:absolute; left:0; top:0; width:1920px; height:1128px; transform-origin:0 0;
+    border-radius:22px; overflow:hidden; border:1px solid var(--line); background:var(--bg);
+    box-shadow:0 40px 120px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03); }
+  #chrome { height:48px; background:#111a2c; border-bottom:1px solid var(--line); display:flex; align-items:center; padding:0 22px; gap:10px; }
+  #chrome i { width:14px; height:14px; border-radius:50%; background:#334155; display:block; }
+  #chrome .addr { margin-left:24px; height:28px; width:520px; border-radius:999px; background:#0f172a; border:1px solid var(--line); color:var(--muted); font:500 14px "DM Sans"; display:flex; align-items:center; padding:0 16px; }
+  #frames { position:relative; width:1920px; height:1080px; background:var(--bg); }
+  iframe { position:absolute; left:0; top:0; width:1920px; height:1080px; border:0; background:var(--bg); }
+  /* Captions */
+  #capBand { position:absolute; left:0; right:0; top:0; height:260px; pointer-events:none;
+    background:linear-gradient(var(--bg) 0, var(--bg) 172px, rgba(15,23,42,0) 262px); }
+  .cap { position:absolute; left:0; right:0; top:62px; text-align:center; font:800 72px Manrope,sans-serif; letter-spacing:-.035em; white-space:nowrap; }
+  .cap em { font-style:normal; color:var(--accent); }
+  /* Cursor */
+  #cursor { position:absolute; left:0; top:0; width:44px; height:44px; transform-origin:6px 4px; filter:drop-shadow(0 6px 14px rgba(0,0,0,.5)); }
+  #ripple { position:absolute; left:0; top:0; width:80px; height:80px; margin:-40px 0 0 -40px; border-radius:50%; border:3px solid var(--accent); opacity:0; }
+  /* Outro */
+  #outro .logo { width:720px; top:60px; margin-left:-360px; }
+  #outro .tag { position:absolute; left:0; right:0; top:560px; text-align:center; font:800 92px Manrope,sans-serif; letter-spacing:-.04em; }
+  #outro .sub { position:absolute; left:0; right:0; top:700px; text-align:center; font:500 36px "DM Sans"; color:var(--muted); }
+  #outro .repo { position:absolute; left:50%; top:800px; transform:translateX(-50%); display:flex; align-items:center; gap:16px; padding:18px 34px; border-radius:999px; border:1px solid var(--line); background:var(--surface); font:600 32px "DM Sans"; color:var(--text); white-space:nowrap; }
+  #outro .repo svg { width:34px; height:34px; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+
+<div id="hook" class="layer">
+  <div class="l1" id="hookL1"></div>
+  <div class="l2" id="hookL2"><span class="w">On</span> <span class="w">purpose.</span></div>
+</div>
+
+<div id="reveal" class="layer">
+  <img class="logo" src="/frontend/logo(darkmode).png" alt="" />
+  <div class="tag">Know Before You Believe.</div>
+</div>
+
+<div id="stageWrap" class="layer">
+  <div id="stage">
+    <div id="chrome"><i></i><i></i><i></i><div class="addr">TND — Trustworthy News Detector</div></div>
+    <div id="frames">
+      <iframe id="home"></iframe>
+      <iframe id="results"></iframe>
+    </div>
+  </div>
+  <div id="ripple"></div>
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2.5 L4 19.5 L8.6 15.4 L11.6 22 L14.6 20.7 L11.7 14.2 L18 14.2 Z" fill="#fff" stroke="#0f172a" stroke-width="1.4" stroke-linejoin="round"/></svg>
+</div>
+
+<div id="capBand"></div>
+<div id="caps" class="layer" style="pointer-events:none">
+  <div class="cap" id="c1">Paste an article.</div>
+  <div class="cap" id="c2">Every claim, checked against <em>real coverage.</em></div>
+  <div class="cap" id="c3">An explainable score. <em>Not a verdict.</em></div>
+  <div class="cap" id="c4">Insufficient evidence is <em>never called false.</em></div>
+</div>
+
+<div id="outro" class="layer">
+  <img class="logo" src="/frontend/logo(darkmode).png" alt="" />
+  <div class="tag">Know Before You Believe.</div>
+  <div class="sub">Local AI with Ollama · Evidence from GNews &amp; GDELT</div>
+  <div class="repo"><svg viewBox="0 0 16 16" fill="#f8fafc"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>github.com/lloydaq/TND-The-News-Detector</div>
+</div>
+
+<script>
+const URL_TEXT = "https://news.example.com/esa-juice-launch";
+const RESULT = {
+  title: "ESA launches Juice to Jupiter",
+  source: "news.example.com",
+  publisher: "Example Daily",
+  author: null, publishedAt: null,
+  riskScore: 40, riskLabel: "Needs Verification", sourceReliability: "Unknown",
+  signals: [
+    { name: "Neutral, non-sensational language", status: "positive" },
+    { name: "Specific dates and named sources", status: "positive" },
+  ],
+  claims: [
+    { id: 1, text: "The European Space Agency launched the Juice spacecraft on 14 April 2023 on an Ariane 5 rocket from Kourou, French Guiana.",
+      status: "Needs Verification", verificationStatus: "INSUFFICIENT_EVIDENCE", evidence: [] },
+    { id: 2, text: "The mission will study Jupiter’s icy moons Ganymede, Callisto and Europa.",
+      status: "Needs Verification", verificationStatus: "INSUFFICIENT_EVIDENCE",
+      evidence: [{ source: "Example Daily", description: "In 2023, a spacecraft was launched to explore the largest planet in our solar system and its icy moons.",
+        url: "https://news.example.com/juice-jupiter", relevance: "RELATED_ONLY",
+        explanation: "The article discusses a related topic, but the available information does not establish or directly refute the specific claim." }] },
+    { id: 3, text: "The mission is due to arrive at Jupiter in July 2031.",
+      status: "Needs Verification", verificationStatus: "INSUFFICIENT_EVIDENCE", evidence: [] },
+  ],
+  analysisStatus: "COMPLETE", degradationReasons: [],
+  analysisExplanation: "Risk score: 40/100 (Needs Verification). It uses 0 warning signal(s) and 2 positive signal(s); source reliability is Unknown and is not proof of claim truth. 3 claim(s) remain unresolved or mixed; missing evidence is not treated as proof of falsity.",
+  input: URL_TEXT,
+};
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = (k) => 1 - Math.pow(1 - k, 3);
+const eInOut = (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const eBack = (k) => { const c = 1.6; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+// fade in over [a,a+d], out over [b-d2,b]
+const vis = (t, a, b, d = .3, d2 = .22) => Math.min(eOut(prog(t, a, a + d)), 1 - prog(t, b - d2, b));
+const $ = (id) => document.getElementById(id);
+
+// Hook words
+const HOOK = "A news detector that won’t tell you what’s true.".split(" ");
+$("hookL1").innerHTML = HOOK.map((w) => `<span class="w">${w}</span>`).join(" ");
+
+let H, R, M = {};          // iframe documents and measurements
+
+function loadFrame(el, src) {
+  return new Promise((res) => { el.onload = () => res(el.contentDocument); el.src = src; });
+}
+function freeze(doc) {
+  const s = doc.createElement("style");
+  s.textContent = "*,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important;scroll-behavior:auto!important}";
+  doc.head.append(s);
+}
+async function ready(doc) {
+  await doc.fonts.ready;
+  await Promise.all([...doc.images].map((i) => i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r; })));
+}
+// rect of an element inside an iframe, in stage coordinates
+function stageRect(doc, sel, scrollY = null) {
+  const r = doc.querySelector(sel).getBoundingClientRect();
+  const sy = scrollY === null ? 0 : scrollY - doc.defaultView.scrollY;
+  return { x: r.left, y: r.top + 48 - sy, w: r.width, h: r.height, cx: r.left + r.width / 2, cy: r.top + 48 - sy + r.height / 2 };
+}
+
+window.setup = async function () {
+  localStorage.setItem("tnd-theme", "dark");
+  sessionStorage.setItem("tndAnalysisResult", JSON.stringify(RESULT));
+  H = await loadFrame($("home"), "/frontend/index.html");
+  R = await loadFrame($("results"), "/frontend/results.html");
+  freeze(H); freeze(R);
+  await Promise.all([ready(H), ready(R), document.fonts.ready,
+    ...[...document.images].map((i) => i.complete ? 0 : new Promise((r) => (i.onload = r)))]);
+
+  // ---- measure home ----
+  M.analyzer = stageRect(H, ".analyzer");
+  M.intro = stageRect(H, ".analyzer-intro");
+  M.terms = stageRect(H, "#terms");
+  M.analyze = stageRect(H, "#analyzeButton");
+  H.getElementById("loadingOverlay").classList.add("visible");
+  M.card = stageRect(H, ".loading-card");
+  H.getElementById("loadingOverlay").classList.remove("visible");
+
+  // ---- measure results (evidence expanded, final scroll) ----
+  const rw = R.defaultView;
+  M.risk = stageRect(R, ".risk-summary");
+  const evBtn = R.querySelector(".evidence-button");
+  M.evBtnBefore = stageRect(R, ".evidence-button");
+  evBtn.click();
+  const cs = R.querySelector(".claims-section").getBoundingClientRect();
+  M.scrollFinal = Math.round(cs.top + rw.scrollY - 150);
+  rw.scrollTo(0, M.scrollFinal);
+  const c1 = R.querySelectorAll(".claim")[0].getBoundingClientRect();
+  const c2ev = R.querySelectorAll(".claim")[1].querySelector(".evidence").getBoundingClientRect();
+  M.claims = { cx: (c1.left + c2ev.right) / 2, cy: 48 + (c1.top + c2ev.bottom) / 2, w: c2ev.right - c1.left, h: c2ev.bottom - c1.top };
+  M.evBtn = stageRect(R, ".evidence-button");
+  evBtn.click();             // collapse again; it is clicked on screen
+  rw.scrollTo(0, 0);
+  M.evOpen = false;
+  return M;
+};
+
+// ---------- camera ----------
+const WIDE = { s: .8, tx: 192, ty: 228 };
+function cam(fx, fy, s, px = 960, py = 640) { return { s, tx: px - s * fx, ty: py - s * fy }; }
+let KF;
+function buildCamera() {
+  const homeTop = M.intro.y, homeBot = M.analyze.y + M.analyze.h;
+  const homeCy = (homeTop + homeBot) / 2;
+  const sA = Math.min(1.3, 780 / (homeBot - homeTop));
+  const sC = Math.min(1.6, 740 / M.card.h);
+  const sR = Math.min(1.3, 1760 / M.risk.w);
+  const sCl = Math.min(1.32, Math.min(1780 / M.claims.w, 760 / M.claims.h));
+  KF = [
+    [5.5, WIDE], [6.0, WIDE],
+    [6.9, cam(960, homeCy, sA, 960, 660)],
+    [8.45, cam(960, homeCy, sA * 1.03, 960, 660)],
+    [9.0, cam(960, M.card.cy, sC, 960, 705)],
+    [11.25, cam(960, M.card.cy, sC * 1.04, 960, 705)],
+    [11.6, cam(M.risk.cx, M.risk.cy, sR, 960, 660)],
+    [14.95, cam(M.risk.cx, M.risk.cy, sR * 1.04, 960, 660)],
+    [15.45, WIDE], [15.9, WIDE],
+    [16.6, cam(M.claims.cx, M.claims.cy, sCl, 960, 670)],
+    [18.6, cam(M.claims.cx, M.claims.cy, sCl * 1.04, 960, 670)],
+  ];
+}
+function camera(t) {
+  if (!KF) buildCamera();
+  if (t <= KF[0][0]) return KF[0][1];
+  for (let i = 0; i < KF.length - 1; i++) {
+    const [ta, a] = KF[i], [tb, b] = KF[i + 1];
+    if (t <= tb) {
+      const k = eInOut(prog(t, ta, tb));
+      return { s: lerp(a.s, b.s, k), tx: lerp(a.tx, b.tx, k), ty: lerp(a.ty, b.ty, k) };
+    }
+  }
+  return KF[KF.length - 1][1];
+}
+
+// cursor path: list of [t, x, y] in stage coords
+function cursorAt(t, path) {
+  if (t <= path[0][0]) return path[0];
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1];
+    if (t <= b[0]) { const k = eInOut(prog(t, a[0], b[0])); return [t, lerp(a[1], b[1], k), lerp(a[2], b[2], k)]; }
+  }
+  return path[path.length - 1];
+}
+const CLICKS = [7.85, 8.35, 16.95];
+
+// ---------- render ----------
+window.render = function (t) {
+  // Hook 0 – 3.5
+  const hookOut = 1 - prog(t, 3.2, 3.45);
+  $("hook").style.opacity = hookOut;
+  $("hookL1").querySelectorAll(".w").forEach((w, i) => {
+    const k = eOut(prog(t, .12 + i * .075, .12 + i * .075 + .38));
+    w.style.opacity = k; w.style.transform = `translateY(${(1 - k) * 46}px)`;
+  });
+  $("hookL2").querySelectorAll(".w").forEach((w, i) => {
+    const k = eBack(prog(t, 1.55 + i * .14, 1.55 + i * .14 + .4));
+    w.style.opacity = clamp(k); w.style.transform = `scale(${lerp(.6, 1, k)})`;
+  });
+
+  // Reveal 3.5 – 5.5
+  const rv = vis(t, 3.5, 5.5, .45, .25);
+  $("reveal").style.opacity = rv;
+  const lk = eOut(prog(t, 3.5, 4.4));
+  $("reveal").querySelector(".logo").style.transform = `scale(${lerp(.86, 1, lk)})`;
+  $("reveal").querySelector(".logo").style.filter = `blur(${(1 - lk) * 14}px)`;
+  const tk = eOut(prog(t, 3.95, 4.4));
+  const tag = $("reveal").querySelector(".tag");
+  tag.style.opacity = tk; tag.style.transform = `translateY(${(1 - tk) * 30}px)`;
+
+  // Stage 5.5 – 18.6
+  const sv = vis(t, 5.5, 18.6, .5, .3);
+  $("stageWrap").style.opacity = sv;
+  $("capBand").style.opacity = sv;
+  const c = camera(t);
+  const rise = (1 - eOut(prog(t, 5.5, 6.0))) * 60;
+  $("stage").style.transform = `translate(${c.tx}px, ${c.ty + rise}px) scale(${c.s})`;
+  const toScreen = (x, y) => [c.tx + c.s * x, c.ty + rise + c.s * y];
+
+  // home page state
+  const typed = Math.round(URL_TEXT.length * prog(t, 6.25, 7.3));
+  const input = H.getElementById("newsInput");
+  if (input.value.length !== typed) {
+    input.value = URL_TEXT.slice(0, typed);
+    input.dispatchEvent(new Event("input"));
+  }
+  if (typed > 0 && H.activeElement !== input && t < 7.8) input.focus();
+  const checked = t >= CLICKS[0];
+  const terms = H.getElementById("terms");
+  if (terms.checked !== checked) { terms.checked = checked; terms.dispatchEvent(new Event("change")); }
+  if (t >= 7.8 && H.activeElement === input) input.blur();
+  const press = t >= CLICKS[1] && t < CLICKS[1] + .14;
+  H.getElementById("analyzeButton").style.transform = press ? "scale(.96)" : "";
+  const overlay = H.getElementById("loadingOverlay");
+  const ovOn = t >= 8.45;
+  overlay.classList.toggle("visible", ovOn);
+  overlay.style.opacity = ovOn ? eOut(prog(t, 8.45, 8.75)) : "";
+  H.querySelectorAll(".loading-step").forEach((s, i) => s.classList.toggle("complete", t >= 9.0 + i * .5));
+  const loader = H.querySelector(".loader");
+  if (loader) loader.style.transform = `rotate(${t * 450}deg)`;
+
+  // page swap 11.25 – 11.7
+  $("home").style.opacity = 1 - prog(t, 11.2, 11.42);
+  $("results").style.opacity = prog(t, 11.48, 11.7);
+  $("results").style.visibility = t >= 11.4 ? "visible" : "hidden";
+  $("home").style.visibility = t < 11.45 ? "visible" : "hidden";
+
+  // results state
+  const sk = eOut(prog(t, 12.0, 13.1));
+  const score = Math.round(40 * sk);
+  R.getElementById("riskScore").textContent = String(score);
+  R.querySelector("#riskMeter span").style.width = `${40 * sk}%`;
+  const rl = R.getElementById("riskLabel");
+  rl.style.opacity = eOut(prog(t, 12.9, 13.25));
+  const sy = Math.round(M.scrollFinal * eInOut(prog(t, 15.0, 15.85)));
+  if (R.defaultView.scrollY !== sy) R.defaultView.scrollTo(0, sy);
+  const open = t >= CLICKS[2];
+  if (open !== M.evOpen) { R.querySelector(".evidence-button").click(); M.evOpen = open; }
+
+  // cursor
+  const cur = $("cursor"), rip = $("ripple");
+  let path = null, cvis = 0;
+  if (t >= 7.2 && t < 8.8) {
+    path = [[7.2, M.terms.cx + 420, M.terms.cy + 260], [7.8, M.terms.cx + 4, M.terms.cy + 4],
+            [7.95, M.terms.cx + 4, M.terms.cy + 4], [8.3, M.analyze.cx + 10, M.analyze.cy + 6]];
+    cvis = Math.min(prog(t, 7.2, 7.4), 1 - prog(t, 8.5, 8.75));
+  } else if (t >= 16.2 && t < 18.6) {
+    const b = M.evBtn;
+    path = [[16.2, b.cx + 260, b.cy + 300], [16.85, b.cx - 20, b.cy + 4]];
+    cvis = Math.min(prog(t, 16.2, 16.4), 1 - prog(t, 17.4, 17.7));
+  }
+  if (path) {
+    const [, x, y] = cursorAt(t, path);
+    const [px, py] = toScreen(x, y);
+    const down = CLICKS.some((ct) => t >= ct && t < ct + .12);
+    cur.style.opacity = cvis * sv;
+    cur.style.transform = `translate(${px - 6}px, ${py - 4}px) scale(${down ? .86 : 1})`;
+    const ct = CLICKS.find((ct) => t >= ct && t < ct + .45);
+    if (ct !== undefined) {
+      const k = prog(t, ct, ct + .45);
+      rip.style.opacity = (1 - k) * .9 * sv;
+      rip.style.transform = `translate(${px}px, ${py}px) scale(${lerp(.3, 1.3, eOut(k))})`;
+    } else rip.style.opacity = 0;
+  } else { cur.style.opacity = 0; rip.style.opacity = 0; }
+
+  // captions
+  const capT = { c1: [5.7, 8.55], c2: [8.6, 11.45], c3: [11.6, 15.0], c4: [15.1, 18.55] };
+  for (const [id, [a, b]] of Object.entries(capT)) {
+    const k = vis(t, a, b, .32, .2);
+    $(id).style.opacity = k;
+    $(id).style.transform = `translateY(${(1 - eOut(prog(t, a, a + .32))) * 26}px)`;
+  }
+
+  // outro 18.6 – 21.5
+  const ov = eOut(prog(t, 18.65, 19.15));
+  $("outro").style.opacity = ov * (1 - prog(t, 21.25, 21.5));
+  const ol = $("outro").querySelector(".logo");
+  ol.style.transform = `scale(${lerp(.9, 1, eOut(prog(t, 18.65, 19.4)))})`;
+  [[".tag", 18.85], [".sub", 19.25], [".repo", 19.55]].forEach(([sel, a]) => {
+    const el = $("outro").querySelector(sel), k = eOut(prog(t, a, a + .4));
+    el.style.opacity = k;
+    el.style.translate = `0 ${(1 - k) * 24}px`;
+  });
+  return true;
+};
+</script>
+</body>
+</html>
